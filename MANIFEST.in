@@ -1,0 +1,7 @@
+include README.rst
+include LICENSE.md
+include requirements*.txt
+include pyproject.toml
+include setup.cfg
+include Makefile
+recursive-include tests *.py
