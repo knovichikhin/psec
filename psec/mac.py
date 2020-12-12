@@ -5,7 +5,10 @@ from cryptography.hazmat.primitives.ciphers import Cipher as _Cipher
 from cryptography.hazmat.primitives.ciphers import algorithms as _algorithms
 from cryptography.hazmat.primitives.ciphers import modes as _modes
 
+from psec import des as _des
+
 __all__ = [
+    "mac_iso9797_1",
     "mac_iso9797_3",
     "pad_iso9797_1",
     "pad_iso9797_2",
@@ -15,12 +18,78 @@ __all__ = [
 _pad_dispatch: Dict[int, Callable[[bytes, Optional[int]], bytes]] = {}
 
 
+def mac_iso9797_1(
+    key: bytes, data: bytes, padding: int, length: Optional[int] = None
+) -> bytes:
+    r"""ISO/IEC 9797-1 MAC algorithm 1 aka CBC MAC.
+    All data blocks are processed using TDES CBC.
+    The last block is the MAC.
+
+    Parameters
+    ----------
+    key : bytes
+        Binary MAC key. Has to be a valid DES key.
+    data : bytes
+        Data to be MAC'd.
+    padding : int
+        Padding method of `data`.
+
+            - 1 = ISO/IEC 9797-1 method 1.
+            - 2 = ISO/IEC 9797-1 method 2.
+            - 3 = ISO/IEC 9797-1 method 3.
+
+    length : int, optional
+        Desired MAC length [4 <= N <= 8] (default 8 bytes).
+
+    Returns
+    -------
+    mac : bytes
+        Returns a binary MAC of requested length
+
+    Raises
+    ------
+    ValueError
+        Invalid padding method specified
+
+    Notes
+    -----
+    See https://en.wikipedia.org/wiki/ISO/IEC_9797-1 for the
+    algorithm reference.
+
+    See Also
+    --------
+    psec.mac.pad_iso9797_1 : ISO/IEC 9791-1 padding method 1
+    psec.mac.pad_iso9797_2 : ISO/IEC 9791-1 padding method 2
+    psec.mac.pad_iso9797_3 : ISO/IEC 9791-1 padding method 3
+
+    Examples
+    --------
+    >>> import psec
+    >>> key = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
+    >>> data = bytes.fromhex("1234567890ABCDEF")
+    >>> psec.mac.mac_iso9797_1(key, data, padding=2).hex().upper()
+    '925B1737EF681AD3'
+    """
+    if length is None:
+        length = 8
+
+    try:
+        data = _pad_dispatch[padding](data, 8)
+    except KeyError:
+        raise ValueError("Specify valid padding method: 1, 2 or 3.")
+
+    mac = _des.encrypt_tdes_cbc(key, b"\x00\x00\x00\x00\x00\x00\x00\x00", data)[-8:]
+    return mac[:length]
+
+
 def mac_iso9797_3(
     key1: bytes, key2: bytes, data: bytes, padding: int, length: Optional[int] = None
 ) -> bytes:
-    r"""ISO/IEC 9797-1 MAC algorithm 3. Requires two independent keys.
-    Only the last data block is processed using TDES,
-    all previous blocks are processed using single DES.
+    r"""ISO/IEC 9797-1 MAC algorithm 3 aka retail MAC.
+    Requires two independent keys.
+    All blocks until the last are processed using single DES using key1.
+    The last data block is processed using TDES using key2 and key1.
+    The resulting block is the MAC.
 
     Parameters
     ----------

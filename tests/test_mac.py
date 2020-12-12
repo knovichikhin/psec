@@ -89,3 +89,42 @@ def test_mac_iso9797_3(padding: int, length: Optional[int], result: str) -> None
         .hex()
         .upper()
     )
+
+
+def test_mac_iso9797_1_exception() -> None:
+    with pytest.raises(
+        ValueError,
+        match="Specify valid padding method: 1, 2 or 3.",
+    ):
+        mac.mac_iso9797_1(
+            b"AAAAAAAAAAAAAAAA",
+            b"hello world",
+            4,
+        )
+
+
+@pytest.mark.parametrize(
+    ["padding", "length", "result"],
+    [
+        (1, 8, "68D9038F23360DF3"),
+        (2, 8, "32DC341271ACCD00"),
+        (3, 8, "CDACA53E2DAA5412"),
+        (1, None, "68D9038F23360DF3"),
+        (2, None, "32DC341271ACCD00"),
+        (3, None, "CDACA53E2DAA5412"),
+        (1, 4, "68D9038F"),
+        (2, 4, "32DC3412"),
+        (3, 4, "CDACA53E"),
+    ],
+)
+def test_mac_iso9797_1(padding: int, length: Optional[int], result: str) -> None:
+    assert result == (
+        mac.mac_iso9797_1(
+            bytes.fromhex("AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB"),
+            b"hello world",
+            padding,
+            length,
+        )
+        .hex()
+        .upper()
+    )
