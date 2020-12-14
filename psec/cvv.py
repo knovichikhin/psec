@@ -1,4 +1,5 @@
 import binascii as _binascii
+import string as _string
 from typing import Union
 
 from psec import des as _des
@@ -66,19 +67,6 @@ def generate_cvv(
     >>> psec.cvv.generate_cvv(cvk, "1234567890123456", "9912", "220")
     '170'
     """
-
-    if len(cvk) != 16:
-        raise ValueError("CVK must be a double length DES key")
-
-    if len(pan) > 19:
-        raise ValueError("PAN must be less than 19 digits")
-
-    if len(expiry) != 4:
-        raise ValueError("PAN expiry must be 4 digits long")
-
-    if len(service_code) != 3:
-        raise ValueError("Service code must be 3 digits long")
-
     if isinstance(pan, bytes):
         pan = pan.decode("ascii")
 
@@ -87,6 +75,18 @@ def generate_cvv(
 
     if isinstance(service_code, bytes):
         service_code = service_code.decode("ascii")
+
+    if len(cvk) != 16:
+        raise ValueError("CVK must be a double length DES key")
+
+    if len(pan) > 19 or not all(d in _string.digits for d in pan):
+        raise ValueError("PAN must be less than 19 digits")
+
+    if len(expiry) != 4 or not all(d in _string.digits for d in expiry):
+        raise ValueError("PAN expiry must be 4 digits long")
+
+    if len(service_code) != 3 or not all(d in _string.digits for d in service_code):
+        raise ValueError("Service code must be 3 digits long")
 
     block = (pan + expiry + service_code).ljust(32, "0")
     result = _des.encrypt_tdes_ecb(cvk[:8], _binascii.a2b_hex(block[:16]))
