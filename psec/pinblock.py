@@ -53,7 +53,7 @@ def encode_pin_block_iso9564_2(pin: Union[bytes, str]) -> bytes:
     )
 
 
-def decode_pin_block_iso9564_2(pin_block: Union[bytes, str]) -> str:
+def decode_pin_block_iso9564_2(pin_block: bytes) -> str:
     r"""Decode ISO 9564 PIN block format 2.
     ISO format 2 PIN block is 8 byte value that consits of
 
@@ -65,8 +65,7 @@ def decode_pin_block_iso9564_2(pin_block: Union[bytes, str]) -> str:
     Parameters
     ----------
     pin_block : bytes or str
-        If PIN block is a bytes instance then it's a binary 8-byte PIN block.
-        If PIN block is an str instance then it's a hexadecimal 16 character PIN block.
+        Binary 8-byte PIN block.
 
     Returns
     -------
@@ -89,29 +88,23 @@ def decode_pin_block_iso9564_2(pin_block: Union[bytes, str]) -> str:
     '123456789012'
     """
 
-    if isinstance(pin_block, bytes):
-        if len(pin_block) != 8:
-            raise ValueError("PIN block must be 8 bytes long")
-        pin_block = pin_block.hex().upper()
-    elif isinstance(pin_block, str):
-        if len(pin_block) != 16 or not all(c in _string.hexdigits for c in pin_block):
-            raise ValueError("PIN block must be 16 hexchars long")
-        pin_block = pin_block.upper()
+    if len(pin_block) != 8:
+        raise ValueError("PIN block must be 8 bytes long")
 
-    if pin_block[0] != "2":
-        raise ValueError(
-            f"PIN block is not ISO format 2: control field `{pin_block[0]}`"
-        )
+    block = pin_block.hex().upper()
 
-    pin_len = int(pin_block[1], 16)
+    if block[0] != "2":
+        raise ValueError(f"PIN block is not ISO format 2: control field `{block[0]}`")
+
+    pin_len = int(block[1], 16)
 
     if pin_len < 4 or pin_len > 12:
         raise ValueError(f"PIN length must be between 4 and 12: `{pin_len}`")
 
-    if pin_block[pin_len + 2 :] != ("F" * (14 - pin_len)):
-        raise ValueError(f"PIN block filler is incorrect: `{pin_block[pin_len + 2 :]}`")
+    if block[pin_len + 2 :] != ("F" * (14 - pin_len)):
+        raise ValueError(f"PIN block filler is incorrect: `{block[pin_len + 2 :]}`")
 
-    pin = pin_block[2 : pin_len + 2]
+    pin = block[2 : pin_len + 2]
 
     if not all(d in _string.digits for d in pin):
         raise ValueError(f"PIN is not numeric: `{pin}`")
