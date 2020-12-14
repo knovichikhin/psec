@@ -7,12 +7,12 @@ import string as _string
 import binascii as _binascii
 
 __all__ = [
-    "encode_pin_block_iso9564_2",
-    "decode_pin_block_iso9564_2",
+    "encode_pin_block_iso_2",
+    "decode_pin_block_iso_2",
 ]
 
 
-def encode_pin_block_iso9564_2(pin: Union[bytes, str]) -> bytes:
+def encode_pin_block_iso_2(pin: Union[bytes, str]) -> bytes:
     r"""Encode ISO 9564 PIN block format 2.
     ISO format 2 PIN block is 8 byte value that consits of
 
@@ -38,8 +38,8 @@ def encode_pin_block_iso9564_2(pin: Union[bytes, str]) -> bytes:
 
     Examples
     --------
-    >>> from psec.pinblock import encode_pin_block_iso9564_2
-    >>> encode_pin_block_iso9564_2("123456789012").hex().upper()
+    >>> from psec.pinblock import encode_pin_block_iso_2
+    >>> encode_pin_block_iso_2("123456789012").hex().upper()
     '2C123456789012FF'
     """
     if len(pin) < 4 or len(pin) > 12:
@@ -53,7 +53,7 @@ def encode_pin_block_iso9564_2(pin: Union[bytes, str]) -> bytes:
     )
 
 
-def decode_pin_block_iso9564_2(pin_block: bytes) -> str:
+def decode_pin_block_iso_2(pin_block: bytes) -> str:
     r"""Decode ISO 9564 PIN block format 2.
     ISO format 2 PIN block is 8 byte value that consits of
 
@@ -83,8 +83,8 @@ def decode_pin_block_iso9564_2(pin_block: bytes) -> str:
 
     Examples
     --------
-    >>> from psec.pinblock import decode_pin_block_iso9564_2
-    >>> decode_pin_block_iso9564_2(bytes.fromhex("2C123456789012FF"))
+    >>> from psec.pinblock import decode_pin_block_iso_2
+    >>> decode_pin_block_iso_2(bytes.fromhex("2C123456789012FF"))
     '123456789012'
     """
 

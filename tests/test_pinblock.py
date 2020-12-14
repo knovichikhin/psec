@@ -3,12 +3,12 @@ import pytest
 from psec import pinblock
 
 
-def test_encode_pin_block_iso9564_2_exception() -> None:
+def test_encode_pin_block_iso_2_exception() -> None:
     with pytest.raises(
         ValueError,
         match="PIN must be between 4 and 12 digits long",
     ):
-        pinblock.encode_pin_block_iso9564_2("1")
+        pinblock.encode_pin_block_iso_2("1")
 
 
 @pytest.mark.parametrize(
@@ -24,8 +24,8 @@ def test_encode_pin_block_iso9564_2_exception() -> None:
         (b"123456789012", "2C123456789012FF"),
     ],
 )
-def test_encode_pin_block_iso9564_2(pin: Union[bytes, str], pin_block: str) -> None:
-    assert pin_block == pinblock.encode_pin_block_iso9564_2(pin).hex().upper()
+def test_encode_pin_block_iso_2(pin: Union[bytes, str], pin_block: str) -> None:
+    assert pin_block == pinblock.encode_pin_block_iso_2(pin).hex().upper()
 
 
 # fmt: off
@@ -41,12 +41,12 @@ def test_encode_pin_block_iso9564_2(pin: Union[bytes, str], pin_block: str) -> N
     ],
 )
 # fmt: on
-def test_decode_pin_block_iso9564_2_exception(pin_block: bytes, error: str) -> None:
+def test_decode_pin_block_iso_2_exception(pin_block: bytes, error: str) -> None:
     with pytest.raises(
         ValueError,
         match=error,
     ):
-        pinblock.decode_pin_block_iso9564_2(pin_block)
+        pinblock.decode_pin_block_iso_2(pin_block)
 
 
 @pytest.mark.parametrize(
@@ -58,5 +58,5 @@ def test_decode_pin_block_iso9564_2_exception(pin_block: bytes, error: str) -> N
         ("123456789012", bytes.fromhex("2C123456789012FF")),
     ],
 )
-def test_decode_pin_block_iso9564_2(pin: str, pin_block: bytes) -> None:
-    assert pin == pinblock.decode_pin_block_iso9564_2(pin_block)
+def test_decode_pin_block_iso_2(pin: str, pin_block: bytes) -> None:
+    assert pin == pinblock.decode_pin_block_iso_2(pin_block)
