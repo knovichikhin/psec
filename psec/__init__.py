@@ -3,13 +3,15 @@ for retail payment transactions and cardholder authentication.
 
 psec modules:
 
-    - cvv - Card Verification Value utilities
-    - mac - Message Authentication Code utilities
-    - des - Triple DES utilities
+    - cvv - Card Verification Value
+    - des - Triple DES
+    - mac - Message Authentication Code
+    - pin - Personal Identification Number
+    - pinblock - PIN Blocks encoding and decoding
     - tools - Miscellaneous tools, such as xor.
 """
 
 __version__ = "0.0.0a1"
 __author__ = "Konstantin Novichikhin <konstantin.novichikhin@gmail.com>"
 
-from psec import cvv, des, mac, tools
+from psec import cvv, des, mac, pin, pinblock, tools

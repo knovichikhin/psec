@@ -14,11 +14,14 @@ Install::
 
     pip install psec
 
-`psec` modules:
+Modules
+-------
 
-    - cvv - Card Verification Value utilities
-    - mac - Message Authentication Code utilities
-    - des - Triple DES utilities
+    - cvv - Card Verification Value
+    - des - Triple DES
+    - mac - Message Authentication Code
+    - pin - Personal Identification Number
+    - pinblock - PIN Blocks encoding and decoding
     - tools - Miscellaneous tools, such as xor.
 
 Contribute
