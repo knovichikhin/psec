@@ -1,5 +1,3 @@
-from typing import Union
-
 import pytest
 from psec import cvv
 
@@ -28,17 +26,7 @@ def test_generate_cvv_exceptions(
         cvv.generate_cvv(cvk, pan, expiry, sc)
 
 
-@pytest.mark.parametrize(
-    ["pan", "expiry", "svc"],
-    [
-        (b"2222222222222222", "3333", "111"),
-        ("2222222222222222", b"3333", "111"),
-        ("2222222222222222", "3333", b"111"),
-    ],
-)
-def test_generate_cvv(
-    pan: Union[bytes, str], expiry: Union[bytes, str], svc: Union[bytes, str]
-) -> None:
+def test_generate_cvv() -> None:
     cvk = "99999999999999998888888888888888"
-    card_cvv = cvv.generate_cvv(bytes.fromhex(cvk), pan, expiry, svc)
+    card_cvv = cvv.generate_cvv(bytes.fromhex(cvk), "2222222222222222", "3333", "111")
     assert card_cvv == "361"

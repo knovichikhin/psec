@@ -1,6 +1,5 @@
 import binascii as _binascii
 import string as _string
-from typing import Union
 
 from psec import des as _des
 from psec import tools as _tools
@@ -10,9 +9,9 @@ __all__ = ["generate_cvv"]
 
 def generate_cvv(
     cvk: bytes,
-    pan: Union[bytes, str],
-    expiry: Union[bytes, str],
-    service_code: Union[bytes, str],
+    pan: str,
+    expiry: str,
+    service_code: str,
 ) -> str:
     r"""Generate Visa/MasterCard Card Verification Value.
 
@@ -20,11 +19,11 @@ def generate_cvv(
     ----------
     cvk : bytes
         16-byte binary card verification key. Has to be a valid Triple DES key.
-    pan : bytes or str
+    pan : str
         ASCII Primary Account Number.
-    expiry : bytes or str
+    expiry : str
         ASCII PAN expiry date. It could be YYMM or MMYY depending on the issuer.
-    service_code : bytes or str
+    service_code : str
         ASCII service code.
 
     Returns
@@ -67,14 +66,6 @@ def generate_cvv(
     >>> psec.cvv.generate_cvv(cvk, "1234567890123456", "9912", "220")
     '170'
     """
-    if isinstance(pan, bytes):
-        pan = pan.decode("ascii")
-
-    if isinstance(expiry, bytes):
-        expiry = expiry.decode("ascii")
-
-    if isinstance(service_code, bytes):
-        service_code = service_code.decode("ascii")
 
     if len(cvk) != 16:
         raise ValueError("CVK must be a double length DES key")
