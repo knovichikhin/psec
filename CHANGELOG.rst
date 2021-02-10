@@ -5,6 +5,7 @@ Unreleased
 
   - ISO format 0
   - ISO format 2
+  - ISO format 3
 
 - Support for PIN:
 
