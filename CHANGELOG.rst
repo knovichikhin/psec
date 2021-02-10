@@ -10,6 +10,7 @@ Unreleased
 - Support for PIN:
 
   - IBM 3624 PIN and offset generation
+  - Visa PIN Verification Value generation
 
 0.0.0a1 - 2020-12-11
 --------------------

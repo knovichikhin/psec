@@ -5,6 +5,7 @@ from psec import des as _des
 __all__ = [
     "generate_ibm3624_pin",
     "generate_ibm3624_offset",
+    "generate_visa_pvv",
 ]
 
 
@@ -205,3 +206,79 @@ def generate_ibm3624_offset(
         str(10 + int(pin[i]) - int(intermediate_pin[i]))[-1:]
         for i in range(0, len(pin))
     )
+
+
+def generate_visa_pvv(
+    pvk: bytes,
+    pvki: str,
+    pin: str,
+    pan: str,
+) -> str:
+    r"""Generate Visa PIN Verification Value.
+
+    Parameters
+    ----------
+    pvk : bytes
+        Binary PIN Verification Key. Has to be a valid Triple DES key.
+    pvki : str
+        PIN Verification Key Index used in the algorithm to calculate.
+        Contains 1 decimal digit in the range from "0" to "9".
+    pin : str
+        Cardholder Personal Identification Number
+    pan : str
+        Primary Account Number.
+
+    Returns
+    -------
+    pvv : str
+        4-digit PIN Verification Value.
+
+    Raises
+    ------
+    ValueError
+        PVK must be a DES key
+        PVKI must be 1 digit from "0" to "9"
+        PIN must be 4 digits
+        PAN must be more than 12 digits
+
+    Examples
+    --------
+    >>> import psec
+    >>> pvk = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
+    >>> psec.pin.generate_visa_pvv(
+    ...     pvk,
+    ...     pvki="3",
+    ...     pin="4524",
+    ...     pan="1122334455667788")
+    '4021'
+    """
+
+    if len(pvk) not in (8, 16, 24):
+        raise ValueError("PVK must be a DES key")
+
+    if len(pvki) != 1 or pvki not in _string.digits:
+        raise ValueError('PVKI must be 1 digit from "0" to "9"')
+
+    if len(pin) != 4 or not all(d in _string.digits for d in pin):
+        raise ValueError("PIN must be 4 digits")
+
+    if len(pan) < 12 or not all(d in _string.digits for d in pan):
+        raise ValueError("PAN must be more than 12 digits")
+
+    # Form a "Transformed Security Parameter"
+    tsp = pan[-12:-1] + pvki + pin
+    tsp = _des.encrypt_tdes_ecb(pvk, bytes.fromhex(tsp)).hex()
+    if len("".join(filter(str.isdigit, tsp))) == 3:
+        print(pin, tsp, pan)
+    # 4 digits from TSP form a PVV
+    pvv = "".join(filter(str.isdigit, tsp))[:4]
+
+    # If there are not enough digits, substitute letters in TSP with digits:
+    # Input  a b c d e f
+    # Output 0 1 2 3 4 5
+    if len(pvv) < 4:
+        pvv2 = "".join(filter((lambda x: x in ("abcdef")), tsp))[: 4 - len(pvv)]
+        pvv2 = pvv2.translate({97: 48, 98: 49, 99: 50, 100: 51, 101: 52, 102: 53})
+        pvv = pvv + pvv2
+
+    return pvv

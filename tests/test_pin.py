@@ -164,3 +164,60 @@ def test_generate_ibm3624_offset(
         pan_pad,
     )
     assert result_offset == offset
+
+
+# fmt: off
+@pytest.mark.parametrize(
+    ["pvk", "pvki", "pin", "pan", "error"],
+    [
+        (b"1234", "1", "0000", "1122334455667788", "PVK must be a DES key"),
+        (b"", "1", "0000", "1122334455667788", "PVK must be a DES key"),
+        (b"12345678", "A", "0000", "1122334455667788", 'PVKI must be 1 digit from "0" to "9"'),
+        (b"12345678", "11", "0000", "1122334455667788", 'PVKI must be 1 digit from "0" to "9"'),
+        (b"12345678", "", "0000", "1122334455667788", 'PVKI must be 1 digit from "0" to "9"'),
+        (b"12345678", "1", "000", "1122334455667788", "PIN must be 4 digits"),
+        (b"12345678", "1", "00000", "1122334455667788", "PIN must be 4 digits"),
+        (b"12345678", "1", "A000", "1122334455667788", "PIN must be 4 digits"),
+        (b"12345678", "1", "000D", "1122334455667788", "PIN must be 4 digits"),
+        (b"12345678", "1", "", "1122334455667788", "PIN must be 4 digits"),
+        (b"12345678", "1", "0000", "11223344556", "PAN must be more than 12 digits"),
+        (b"12345678", "1", "0000", "1122334455A", "PAN must be more than 12 digits"),
+        (b"12345678", "1", "0000", "", "PAN must be more than 12 digits"),
+    ],
+)
+# fmt: on
+def test_generate_visa_pvv_exceptions(
+    pvk: bytes,
+    pvki: str,
+    pin: str,
+    pan: str,
+    error: str,
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        psec.pin.generate_visa_pvv(pvk, pvki, pin, pan)
+
+
+# fmt: off
+@pytest.mark.parametrize(
+    ["pvki", "pin", "pan", "result_pvv"],
+    [
+        ("1", "4524", "1122334455667788", "8523"),
+        ("2", "1912", "1122334455667788", "3244"),
+        ("1", "0570", "1122334455667718", "3144"),
+        ("1", "8299", "1122334455667708", "4422"),
+    ],
+)
+# fmt: on
+def test_generate_visa_pvv(
+    pvki: str,
+    pin: str,
+    pan: str,
+    result_pvv: str,
+) -> None:
+    pvk = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
+    assert result_pvv == psec.pin.generate_visa_pvv(
+        pvk,
+        pvki,
+        pin,
+        pan,
+    )
