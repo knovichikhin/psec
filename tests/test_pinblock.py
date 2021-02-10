@@ -1,5 +1,3 @@
-from typing import Union
-
 import pytest
 from psec import pinblock
 
@@ -28,15 +26,10 @@ def test_encode_pinblock_iso_0_exception(pin: str, pan: str, error: str) -> None
     ["pin", "pan", "pin_block"],
     [
         ("1234", "5555555551234567", "041261AAAAEDCBA9"),
-        (b"1234", "5555555551234567", "041261AAAAEDCBA9"),
-        ("1234", b"5555555551234567", "041261AAAAEDCBA9"),
-        (b"1234", b"5555555551234567", "041261AAAAEDCBA9"),
         ("123456789012", "5555555551234567", "0C1261032D8226A9"),
     ],
 )
-def test_encode_pinblock_iso_0(
-    pin: Union[bytes, str], pan: Union[bytes, str], pin_block: str
-) -> None:
+def test_encode_pinblock_iso_0(pin: str, pan: str, pin_block: str) -> None:
     assert pin_block == pinblock.encode_pinblock_iso_0(pin, pan).hex().upper()
 
 
@@ -65,13 +58,9 @@ def test_encode_pinblock_iso_2_exception(pin: str, error: str) -> None:
         ("123456789", "29123456789FFFFF"),
         ("1234567890", "2A1234567890FFFF"),
         ("123456789012", "2C123456789012FF"),
-        (b"1234", "241234FFFFFFFFFF"),
-        (b"123456789", "29123456789FFFFF"),
-        (b"1234567890", "2A1234567890FFFF"),
-        (b"123456789012", "2C123456789012FF"),
     ],
 )
-def test_encode_pinblock_iso_2(pin: Union[bytes, str], pin_block: str) -> None:
+def test_encode_pinblock_iso_2(pin: str, pin_block: str) -> None:
     assert pin_block == pinblock.encode_pinblock_iso_2(pin).hex().upper()
 
 
@@ -104,18 +93,12 @@ def test_decode_pinblock_iso_0_exception(
     ["pin", "pin_block", "pan"],
     [
         ("1234", bytes.fromhex("041261AAAAEDCBA9"), "5555555551234567"),
-        ("1234", bytes.fromhex("041261AAAAEDCBA9"), b"5555555551234567"),
         ("123456789", bytes.fromhex("091261032D8DCBA9"), "5555555551234567"),
-        ("123456789", bytes.fromhex("091261032D8DCBA9"), b"5555555551234567"),
         ("1234567890", bytes.fromhex("0A1261032D82CBA9"), "5555555551234567"),
-        ("1234567890", bytes.fromhex("0A1261032D82CBA9"), b"5555555551234567"),
         ("123456789012", bytes.fromhex("0C1261032D8226A9"), "5555555551234567"),
-        ("123456789012", bytes.fromhex("0C1261032D8226A9"), b"5555555551234567"),
     ],
 )
-def test_decode_pinblock_iso_0(
-    pin: str, pin_block: bytes, pan: Union[bytes, str]
-) -> None:
+def test_decode_pinblock_iso_0(pin: str, pin_block: bytes, pan: str) -> None:
     assert pin == pinblock.decode_pinblock_iso_0(pin_block, pan)
 
 

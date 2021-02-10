@@ -4,7 +4,6 @@ other additional information, such as the leght of the PIN.
 
 import binascii as _binascii
 import string as _string
-from typing import Union
 
 from psec import tools as _tools
 
@@ -16,7 +15,7 @@ __all__ = [
 ]
 
 
-def encode_pinblock_iso_0(pin: Union[bytes, str], pan: Union[bytes, str]) -> bytes:
+def encode_pinblock_iso_0(pin: str, pan: str) -> bytes:
     r"""Encode ISO 9564 PIN block format 0 aka ANSI PIN block.
     ISO format 0 PIN block is an 8 byte value that consits of
 
@@ -32,14 +31,14 @@ def encode_pinblock_iso_0(pin: Union[bytes, str], pan: Union[bytes, str]) -> byt
 
     Parameters
     ----------
-    pin : bytes or str
+    pin : str
         ASCII Personal Identification Number.
-    pan : bytes or str
+    pan : str
         ASCII Personal Account Number.
 
     Returns
     -------
-    pin_block : bytes
+    pinblock : bytes
         Binary 8-byte PIN block.
 
     Raises
@@ -54,11 +53,6 @@ def encode_pinblock_iso_0(pin: Union[bytes, str], pan: Union[bytes, str]) -> byt
     >>> encode_pinblock_iso_0("1234", "5544332211009966").hex().upper()
     '041277CDDEEFF669'
     """
-    if isinstance(pin, bytes):
-        pin = pin.decode("ascii")
-
-    if isinstance(pan, bytes):
-        pan = pan.decode("ascii")
 
     if len(pin) < 4 or len(pin) > 12 or not all(d in _string.digits for d in pin):
         raise ValueError("PIN must be between 4 and 12 digits long")
@@ -66,15 +60,15 @@ def encode_pinblock_iso_0(pin: Union[bytes, str], pan: Union[bytes, str]) -> byt
     if len(pan) < 13 or not all(d in _string.digits for d in pan):
         raise ValueError("PAN must be at least 13 digits long")
 
-    pin_block = len(pin).to_bytes(1, "big") + _binascii.a2b_hex(
+    pinblock = len(pin).to_bytes(1, "big") + _binascii.a2b_hex(
         pin + "F" * (14 - len(pin))
     )
     pan_block = b"\x00\x00" + _binascii.a2b_hex(pan[-13:-1])
 
-    return _tools.xor(pin_block, pan_block)
+    return _tools.xor(pinblock, pan_block)
 
 
-def encode_pinblock_iso_2(pin: Union[bytes, str]) -> bytes:
+def encode_pinblock_iso_2(pin: str) -> bytes:
     r"""Encode ISO 9564 PIN block format 2.
     ISO format 2 PIN block is an 8 byte value that consits of
 
@@ -85,12 +79,12 @@ def encode_pinblock_iso_2(pin: Union[bytes, str]) -> bytes:
 
     Parameters
     ----------
-    pin : bytes or str
+    pin : str
         ASCII Personal Identification Number.
 
     Returns
     -------
-    pin_block : bytes
+    pinblock : bytes
         Binary 8-byte PIN block.
 
     Raises
@@ -104,8 +98,6 @@ def encode_pinblock_iso_2(pin: Union[bytes, str]) -> bytes:
     >>> encode_pinblock_iso_2("1234").hex().upper()
     '241234FFFFFFFFFF'
     """
-    if isinstance(pin, bytes):
-        pin = pin.decode("ascii")
 
     if len(pin) < 4 or len(pin) > 12 or not all(d in _string.digits for d in pin):
         raise ValueError("PIN must be between 4 and 12 digits long")
@@ -115,7 +107,7 @@ def encode_pinblock_iso_2(pin: Union[bytes, str]) -> bytes:
     )
 
 
-def decode_pinblock_iso_0(pin_block: bytes, pan: Union[bytes, str]) -> str:
+def decode_pinblock_iso_0(pinblock: bytes, pan: str) -> str:
     r"""Decode ISO 9564 PIN block format 0 aka ANSI PIN block.
     ISO format 0 PIN block is an 8 byte value that consits of
 
@@ -131,9 +123,9 @@ def decode_pinblock_iso_0(pin_block: bytes, pan: Union[bytes, str]) -> str:
 
     Parameters
     ----------
-    pin_block : bytes
+    pinblock : bytes
         Binary 8-byte PIN block.
-    pan : bytes or str
+    pan : str
         ASCII Personal Account Number.
 
     Returns
@@ -156,17 +148,15 @@ def decode_pinblock_iso_0(pin_block: bytes, pan: Union[bytes, str]) -> str:
     >>> decode_pinblock_iso_2(bytes.fromhex("2C123456789012FF"))
     '123456789012'
     """
-    if isinstance(pan, bytes):
-        pan = pan.decode("ascii")
 
     if len(pan) < 13 or not all(d in _string.digits for d in pan):
         raise ValueError("PAN must be at least 13 digits long")
 
-    if len(pin_block) != 8:
+    if len(pinblock) != 8:
         raise ValueError("PIN block must be 8 bytes long")
 
     pan_block = b"\x00\x00" + _binascii.a2b_hex(pan[-13:-1])
-    block = _tools.xor(pin_block, pan_block).hex().upper()
+    block = _tools.xor(pinblock, pan_block).hex().upper()
 
     if block[0] != "0":
         raise ValueError(f"PIN block is not ISO format 0: control field `{block[0]}`")
@@ -187,7 +177,7 @@ def decode_pinblock_iso_0(pin_block: bytes, pan: Union[bytes, str]) -> str:
     return pin
 
 
-def decode_pinblock_iso_2(pin_block: bytes) -> str:
+def decode_pinblock_iso_2(pinblock: bytes) -> str:
     r"""Decode ISO 9564 PIN block format 2.
     ISO format 2 PIN block is 8 byte value that consits of
 
@@ -198,7 +188,7 @@ def decode_pinblock_iso_2(pin_block: bytes) -> str:
 
     Parameters
     ----------
-    pin_block : bytes
+    pinblock : bytes
         Binary 8-byte PIN block.
 
     Returns
@@ -210,7 +200,6 @@ def decode_pinblock_iso_2(pin_block: bytes) -> str:
     ------
     ValueError
         PIN block must be 8 bytes long
-        PIN block must be 16 hexchars long
         PIN block is not ISO format 2: control field `X`
         PIN block filler is incorrect: `filler`
         PIN is not numeric: `pin`
@@ -222,10 +211,10 @@ def decode_pinblock_iso_2(pin_block: bytes) -> str:
     '123456789012'
     """
 
-    if len(pin_block) != 8:
+    if len(pinblock) != 8:
         raise ValueError("PIN block must be 8 bytes long")
 
-    block = pin_block.hex().upper()
+    block = pinblock.hex().upper()
 
     if block[0] != "2":
         raise ValueError(f"PIN block is not ISO format 2: control field `{block[0]}`")
