@@ -9,14 +9,14 @@ from typing import Union
 from psec import tools as _tools
 
 __all__ = [
-    "encode_pin_block_iso_0",
-    "encode_pin_block_iso_2",
-    "decode_pin_block_iso_0",
-    "decode_pin_block_iso_2",
+    "encode_pinblock_iso_0",
+    "encode_pinblock_iso_2",
+    "decode_pinblock_iso_0",
+    "decode_pinblock_iso_2",
 ]
 
 
-def encode_pin_block_iso_0(pin: Union[bytes, str], pan: Union[bytes, str]) -> bytes:
+def encode_pinblock_iso_0(pin: Union[bytes, str], pan: Union[bytes, str]) -> bytes:
     r"""Encode ISO 9564 PIN block format 0 aka ANSI PIN block.
     ISO format 0 PIN block is an 8 byte value that consits of
 
@@ -50,8 +50,8 @@ def encode_pin_block_iso_0(pin: Union[bytes, str], pan: Union[bytes, str]) -> by
 
     Examples
     --------
-    >>> from psec.pinblock import encode_pin_block_iso_0
-    >>> encode_pin_block_iso_0("1234", "5544332211009966").hex().upper()
+    >>> from psec.pinblock import encode_pinblock_iso_0
+    >>> encode_pinblock_iso_0("1234", "5544332211009966").hex().upper()
     '041277CDDEEFF669'
     """
     if isinstance(pin, bytes):
@@ -74,7 +74,7 @@ def encode_pin_block_iso_0(pin: Union[bytes, str], pan: Union[bytes, str]) -> by
     return _tools.xor(pin_block, pan_block)
 
 
-def encode_pin_block_iso_2(pin: Union[bytes, str]) -> bytes:
+def encode_pinblock_iso_2(pin: Union[bytes, str]) -> bytes:
     r"""Encode ISO 9564 PIN block format 2.
     ISO format 2 PIN block is an 8 byte value that consits of
 
@@ -100,8 +100,8 @@ def encode_pin_block_iso_2(pin: Union[bytes, str]) -> bytes:
 
     Examples
     --------
-    >>> from psec.pinblock import encode_pin_block_iso_2
-    >>> encode_pin_block_iso_2("1234").hex().upper()
+    >>> from psec.pinblock import encode_pinblock_iso_2
+    >>> encode_pinblock_iso_2("1234").hex().upper()
     '241234FFFFFFFFFF'
     """
     if isinstance(pin, bytes):
@@ -115,7 +115,7 @@ def encode_pin_block_iso_2(pin: Union[bytes, str]) -> bytes:
     )
 
 
-def decode_pin_block_iso_0(pin_block: bytes, pan: Union[bytes, str]) -> str:
+def decode_pinblock_iso_0(pin_block: bytes, pan: Union[bytes, str]) -> str:
     r"""Decode ISO 9564 PIN block format 0 aka ANSI PIN block.
     ISO format 0 PIN block is an 8 byte value that consits of
 
@@ -152,8 +152,8 @@ def decode_pin_block_iso_0(pin_block: bytes, pan: Union[bytes, str]) -> str:
 
     Examples
     --------
-    >>> from psec.pinblock import decode_pin_block_iso_2
-    >>> decode_pin_block_iso_2(bytes.fromhex("2C123456789012FF"))
+    >>> from psec.pinblock import decode_pinblock_iso_2
+    >>> decode_pinblock_iso_2(bytes.fromhex("2C123456789012FF"))
     '123456789012'
     """
     if isinstance(pan, bytes):
@@ -187,7 +187,7 @@ def decode_pin_block_iso_0(pin_block: bytes, pan: Union[bytes, str]) -> str:
     return pin
 
 
-def decode_pin_block_iso_2(pin_block: bytes) -> str:
+def decode_pinblock_iso_2(pin_block: bytes) -> str:
     r"""Decode ISO 9564 PIN block format 2.
     ISO format 2 PIN block is 8 byte value that consits of
 
@@ -217,8 +217,8 @@ def decode_pin_block_iso_2(pin_block: bytes) -> str:
 
     Examples
     --------
-    >>> from psec.pinblock import decode_pin_block_iso_2
-    >>> decode_pin_block_iso_2(bytes.fromhex("2C123456789012FF"))
+    >>> from psec.pinblock import decode_pinblock_iso_2
+    >>> decode_pinblock_iso_2(bytes.fromhex("2C123456789012FF"))
     '123456789012'
     """
 

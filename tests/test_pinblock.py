@@ -16,12 +16,12 @@ from psec import pinblock
     ],
 )
 # fmt: on
-def test_encode_pin_block_iso_0_exception(pin: str, pan: str, error: str) -> None:
+def test_encode_pinblock_iso_0_exception(pin: str, pan: str, error: str) -> None:
     with pytest.raises(
         ValueError,
         match=error,
     ):
-        pinblock.encode_pin_block_iso_0(pin, pan)
+        pinblock.encode_pinblock_iso_0(pin, pan)
 
 
 @pytest.mark.parametrize(
@@ -34,10 +34,10 @@ def test_encode_pin_block_iso_0_exception(pin: str, pan: str, error: str) -> Non
         ("123456789012", "5555555551234567", "0C1261032D8226A9"),
     ],
 )
-def test_encode_pin_block_iso_0(
+def test_encode_pinblock_iso_0(
     pin: Union[bytes, str], pan: Union[bytes, str], pin_block: str
 ) -> None:
-    assert pin_block == pinblock.encode_pin_block_iso_0(pin, pan).hex().upper()
+    assert pin_block == pinblock.encode_pinblock_iso_0(pin, pan).hex().upper()
 
 
 # fmt: off
@@ -50,12 +50,12 @@ def test_encode_pin_block_iso_0(
     ],
 )
 # fmt: on
-def test_encode_pin_block_iso_2_exception(pin: str, error: str) -> None:
+def test_encode_pinblock_iso_2_exception(pin: str, error: str) -> None:
     with pytest.raises(
         ValueError,
         match=error,
     ):
-        pinblock.encode_pin_block_iso_2(pin)
+        pinblock.encode_pinblock_iso_2(pin)
 
 
 @pytest.mark.parametrize(
@@ -71,8 +71,8 @@ def test_encode_pin_block_iso_2_exception(pin: str, error: str) -> None:
         (b"123456789012", "2C123456789012FF"),
     ],
 )
-def test_encode_pin_block_iso_2(pin: Union[bytes, str], pin_block: str) -> None:
-    assert pin_block == pinblock.encode_pin_block_iso_2(pin).hex().upper()
+def test_encode_pinblock_iso_2(pin: Union[bytes, str], pin_block: str) -> None:
+    assert pin_block == pinblock.encode_pinblock_iso_2(pin).hex().upper()
 
 
 # fmt: off
@@ -90,14 +90,14 @@ def test_encode_pin_block_iso_2(pin: Union[bytes, str], pin_block: str) -> None:
     ],
 )
 # fmt: on
-def test_decode_pin_block_iso_0_exception(
+def test_decode_pinblock_iso_0_exception(
     pin_block: bytes, pan: str, error: str
 ) -> None:
     with pytest.raises(
         ValueError,
         match=error,
     ):
-        pinblock.decode_pin_block_iso_0(pin_block, pan)
+        pinblock.decode_pinblock_iso_0(pin_block, pan)
 
 
 @pytest.mark.parametrize(
@@ -113,10 +113,10 @@ def test_decode_pin_block_iso_0_exception(
         ("123456789012", bytes.fromhex("0C1261032D8226A9"), b"5555555551234567"),
     ],
 )
-def test_decode_pin_block_iso_0(
+def test_decode_pinblock_iso_0(
     pin: str, pin_block: bytes, pan: Union[bytes, str]
 ) -> None:
-    assert pin == pinblock.decode_pin_block_iso_0(pin_block, pan)
+    assert pin == pinblock.decode_pinblock_iso_0(pin_block, pan)
 
 
 # fmt: off
@@ -132,12 +132,12 @@ def test_decode_pin_block_iso_0(
     ],
 )
 # fmt: on
-def test_decode_pin_block_iso_2_exception(pin_block: bytes, error: str) -> None:
+def test_decode_pinblock_iso_2_exception(pin_block: bytes, error: str) -> None:
     with pytest.raises(
         ValueError,
         match=error,
     ):
-        pinblock.decode_pin_block_iso_2(pin_block)
+        pinblock.decode_pinblock_iso_2(pin_block)
 
 
 @pytest.mark.parametrize(
@@ -149,5 +149,5 @@ def test_decode_pin_block_iso_2_exception(pin_block: bytes, error: str) -> None:
         ("123456789012", bytes.fromhex("2C123456789012FF")),
     ],
 )
-def test_decode_pin_block_iso_2(pin: str, pin_block: bytes) -> None:
-    assert pin == pinblock.decode_pin_block_iso_2(pin_block)
+def test_decode_pinblock_iso_2(pin: str, pin_block: bytes) -> None:
+    assert pin == pinblock.decode_pinblock_iso_2(pin_block)
