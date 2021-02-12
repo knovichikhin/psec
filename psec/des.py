@@ -13,6 +13,8 @@ __all__ = [
     "calculate_kcv",
     "encrypt_tdes_cbc",
     "encrypt_tdes_ecb",
+    "decrypt_tdes_cbc",
+    "decrypt_tdes_ecb",
 ]
 
 
@@ -172,3 +174,64 @@ def encrypt_tdes_ecb(key: bytes, data: bytes) -> bytes:
         _algorithms.TripleDES(key), _modes.ECB(), backend=_default_backend()
     )
     return cipher.encryptor().update(data)
+
+
+def decrypt_tdes_cbc(key: bytes, iv: bytes, data: bytes) -> bytes:
+    r"""Decrypt data using Triple DES CBC algorithm.
+
+    Parameters
+    ----------
+    key : bytes
+        Binary Triple DES key. Has to be a valid DES key.
+    iv : bytes
+        Binary initial initialization vector for CBC.
+    data : bytes
+        Binary data to be decrypted.
+
+    Returns
+    -------
+    decrypted_data : bytes
+        Binary decrypted data.
+
+    Examples
+    --------
+    >>> import psec
+    >>> key = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
+    >>> iv = bytes.fromhex("0000000000000000")
+    >>> psec.des.decrypt_tdes_cbc(key, iv, bytes.fromhex("41D2FFBA3CDC15FE"))
+    b'12345678'
+    """
+    cipher = _Cipher(
+        _algorithms.TripleDES(key),
+        _modes.CBC(iv),
+        backend=_default_backend(),
+    )
+    return cipher.decryptor().update(data)
+
+
+def decrypt_tdes_ecb(key: bytes, data: bytes) -> bytes:
+    r"""Decrypt data using Triple DES ECB algorithm.
+
+    Parameters
+    ----------
+    key : bytes
+        Binary Triple DES key. Has to be a valid DES key.
+    data : bytes
+        Binary data to be decrypted.
+
+    Returns
+    -------
+    decrypted_data : bytes
+        Binary decrypted data.
+
+    Examples
+    --------
+    >>> import psec
+    >>> key = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
+    >>> psec.des.decrypt_tdes_ecb(key, bytes.fromhex("41D2FFBA3CDC15FE"))
+    b'12345678'
+    """
+    cipher = _Cipher(
+        _algorithms.TripleDES(key), _modes.ECB(), backend=_default_backend()
+    )
+    return cipher.decryptor().update(data)
