@@ -8,11 +8,51 @@ from cryptography.hazmat.primitives.ciphers import modes as _modes
 from psec import tools as _tools
 
 __all__ = [
+    "apply_key_variant",
     "adjust_key_parity",
     "key_check_digits",
     "encrypt_tdes_cbc",
     "encrypt_tdes_ecb",
 ]
+
+
+def apply_key_variant(key: Union[bytes, bytearray], variant: int) -> bytes:
+    r"""Apply variant to the most significant byte of each DES key pair.
+
+    Parameters
+    ----------
+    key : bytes
+        Binary (Triple) DES key. Has to be a valid DES key.
+    variant : bytes
+        Variant in the range of 0 and 31.
+
+    Returns
+    -------
+    key_variant : bytes
+        Binary key under desired variant.
+
+    Raises
+    ------
+    ValueError
+        Key must be a single, double or triple DES key
+        Variant must be in the range of 0 to 31
+
+    Examples
+    --------
+    >>> import psec
+    >>> key = bytes.fromhex("0123456789ABCDEF")
+    >>> psec.des.apply_key_variant(key, 1).hex().upper()
+    '0923456789ABCDEF'
+    """
+
+    if len(key) not in (8, 16, 24):
+        raise ValueError("Key must be a single, double or triple DES key")
+
+    if variant < 0 or variant > 31:
+        raise ValueError("Variant must be in the range of 0 to 31")
+
+    mask = ((8 * variant).to_bytes(1, "big") + (b"\x00" * 7)) * (len(key) // 8)
+    return _tools.xor(key, mask)
 
 
 def adjust_key_parity(key: Union[bytes, bytearray]) -> bytes:
