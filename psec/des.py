@@ -10,7 +10,7 @@ from psec import tools as _tools
 __all__ = [
     "apply_key_variant",
     "adjust_key_parity",
-    "key_check_digits",
+    "calculate_kcv",
     "encrypt_tdes_cbc",
     "encrypt_tdes_ecb",
 ]
@@ -84,26 +84,26 @@ def adjust_key_parity(key: Union[bytes, bytearray]) -> bytes:
     return bytes(adjusted_key)
 
 
-def key_check_digits(key: bytes, length: int = 2) -> bytes:
-    r"""Calculate Triple DES key check digits.
+def calculate_kcv(key: bytes, length: int = 2) -> bytes:
+    r"""Calculate DES key checksum value (KCV).
 
     Parameters
     ----------
     key : bytes
         Binary key to provide check digits for. Has to be a valid DES key.
     length : int, optional
-        Number of key check digits bytes provided in the response (default 2).
+        Number of KCV bytes returned (default 2).
 
     Returns
     -------
-    check_digits : bytes
-        Binary check digits (`length` bytes)
+    kcv : bytes
+        Binary KCV (`length` bytes)
 
     Examples
     --------
     >>> import psec
     >>> key = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
-    >>> psec.des.key_check_digits(key).hex().upper()
+    >>> psec.des.calculate_kcv(key).hex().upper()
     '08D7'
     """
     cipher = _Cipher(
