@@ -8,8 +8,8 @@ from cryptography.hazmat.primitives.ciphers import modes as _modes
 from psec import des as _des
 
 __all__ = [
-    "mac_iso9797_1",
-    "mac_iso9797_3",
+    "generate_mac_iso9797_1",
+    "generate_mac_iso9797_3",
     "pad_iso9797_1",
     "pad_iso9797_2",
     "pad_iso9797_3",
@@ -18,7 +18,7 @@ __all__ = [
 _pad_dispatch: Dict[int, Callable[[bytes, Optional[int]], bytes]] = {}
 
 
-def mac_iso9797_1(
+def generate_mac_iso9797_1(
     key: bytes, data: bytes, padding: int, length: Optional[int] = None
 ) -> bytes:
     r"""ISO/IEC 9797-1 MAC algorithm 1 aka CBC MAC.
@@ -67,7 +67,7 @@ def mac_iso9797_1(
     >>> import psec
     >>> key = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
     >>> data = bytes.fromhex("1234567890ABCDEF")
-    >>> psec.mac.mac_iso9797_1(key, data, padding=2).hex().upper()
+    >>> psec.mac.generate_mac_iso9797_1(key, data, padding=2).hex().upper()
     '925B1737EF681AD3'
     """
     if length is None:
@@ -82,7 +82,7 @@ def mac_iso9797_1(
     return mac[:length]
 
 
-def mac_iso9797_3(
+def generate_mac_iso9797_3(
     key1: bytes, key2: bytes, data: bytes, padding: int, length: Optional[int] = None
 ) -> bytes:
     r"""ISO/IEC 9797-1 MAC algorithm 3 aka retail MAC.
@@ -138,7 +138,7 @@ def mac_iso9797_3(
     >>> key1 = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
     >>> key2 = bytes.fromhex("FEDCBA98765432100123456789ABCDEF")
     >>> data = bytes.fromhex("1234567890ABCDEF")
-    >>> psec.mac.mac_iso9797_3(key1, key2, data, padding=2).hex().upper()
+    >>> psec.mac.generate_mac_iso9797_3(key1, key2, data, padding=2).hex().upper()
     '644AA5C915DBDAF8'
     """
     if length is None:
