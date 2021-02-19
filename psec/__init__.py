@@ -11,7 +11,7 @@ psec modules:
     - tools - Miscellaneous tools, such as xor.
 """
 
-__version__ = "0.0.0a1"
+__version__ = "1.0.0"
 __author__ = "Konstantin Novichikhin <konstantin.novichikhin@gmail.com>"
 
 from psec import cvv, des, mac, pin, pinblock, tools
