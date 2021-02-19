@@ -1,3 +1,9 @@
+r"""This module implements ISO/IEC 9797-1 MAC algorithms and
+padding methods used in retail payments.
+
+See https://en.wikipedia.org/wiki/ISO/IEC_9797-1 for more information.
+"""
+
 from typing import Callable, Dict, Optional
 
 from cryptography.hazmat.backends import default_backend as _default_backend
@@ -8,17 +14,17 @@ from cryptography.hazmat.primitives.ciphers import modes as _modes
 from psec import des as _des
 
 __all__ = [
-    "generate_mac_iso9797_1",
-    "generate_mac_iso9797_3",
-    "pad_iso9797_1",
-    "pad_iso9797_2",
-    "pad_iso9797_3",
+    "generate_cbc_mac",
+    "generate_retail_mac",
+    "pad_iso_1",
+    "pad_iso_2",
+    "pad_iso_3",
 ]
 
 _pad_dispatch: Dict[int, Callable[[bytes, Optional[int]], bytes]] = {}
 
 
-def generate_mac_iso9797_1(
+def generate_cbc_mac(
     key: bytes, data: bytes, padding: int, length: Optional[int] = None
 ) -> bytes:
     r"""ISO/IEC 9797-1 MAC algorithm 1 aka CBC MAC.
@@ -58,16 +64,16 @@ def generate_mac_iso9797_1(
 
     See Also
     --------
-    psec.mac.pad_iso9797_1 : ISO/IEC 9791-1 padding method 1
-    psec.mac.pad_iso9797_2 : ISO/IEC 9791-1 padding method 2
-    psec.mac.pad_iso9797_3 : ISO/IEC 9791-1 padding method 3
+    psec.mac.pad_iso_1 : ISO/IEC 9791-1 padding method 1
+    psec.mac.pad_iso_2 : ISO/IEC 9791-1 padding method 2
+    psec.mac.pad_iso_3 : ISO/IEC 9791-1 padding method 3
 
     Examples
     --------
     >>> import psec
     >>> key = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
     >>> data = bytes.fromhex("1234567890ABCDEF")
-    >>> psec.mac.generate_mac_iso9797_1(key, data, padding=2).hex().upper()
+    >>> psec.mac.generate_cbc_mac(key, data, padding=2).hex().upper()
     '925B1737EF681AD3'
     """
     if length is None:
@@ -82,7 +88,7 @@ def generate_mac_iso9797_1(
     return mac[:length]
 
 
-def generate_mac_iso9797_3(
+def generate_retail_mac(
     key1: bytes, key2: bytes, data: bytes, padding: int, length: Optional[int] = None
 ) -> bytes:
     r"""ISO/IEC 9797-1 MAC algorithm 3 aka retail MAC.
@@ -128,9 +134,9 @@ def generate_mac_iso9797_3(
 
     See Also
     --------
-    psec.mac.pad_iso9797_1 : ISO/IEC 9791-1 padding method 1
-    psec.mac.pad_iso9797_2 : ISO/IEC 9791-1 padding method 2
-    psec.mac.pad_iso9797_3 : ISO/IEC 9791-1 padding method 3
+    psec.mac.pad_iso_1 : ISO/IEC 9791-1 padding method 1
+    psec.mac.pad_iso_2 : ISO/IEC 9791-1 padding method 2
+    psec.mac.pad_iso_3 : ISO/IEC 9791-1 padding method 3
 
     Examples
     --------
@@ -138,7 +144,7 @@ def generate_mac_iso9797_3(
     >>> key1 = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
     >>> key2 = bytes.fromhex("FEDCBA98765432100123456789ABCDEF")
     >>> data = bytes.fromhex("1234567890ABCDEF")
-    >>> psec.mac.generate_mac_iso9797_3(key1, key2, data, padding=2).hex().upper()
+    >>> psec.mac.generate_retail_mac(key1, key2, data, padding=2).hex().upper()
     '644AA5C915DBDAF8'
     """
     if length is None:
@@ -167,7 +173,7 @@ def generate_mac_iso9797_3(
     return encryptor1.update(decryptor2.update(data))[:length]
 
 
-def pad_iso9797_1(data: bytes, block_size: Optional[int] = None) -> bytes:
+def pad_iso_1(data: bytes, block_size: Optional[int] = None) -> bytes:
     r"""ISO/IEC 9797-1 padding method 1.
     Add the smallest number of "0x00" bytes to the right
     such that the length of resulting message is a multiple of
@@ -194,7 +200,7 @@ def pad_iso9797_1(data: bytes, block_size: Optional[int] = None) -> bytes:
     Examples
     --------
     >>> import psec
-    >>> psec.mac.pad_iso9797_1(bytes.fromhex("1234")).hex().upper()
+    >>> psec.mac.pad_iso_1(bytes.fromhex("1234")).hex().upper()
     '1234000000000000'
     """
     if block_size is None:
@@ -210,10 +216,10 @@ def pad_iso9797_1(data: bytes, block_size: Optional[int] = None) -> bytes:
     return data
 
 
-_pad_dispatch[1] = pad_iso9797_1
+_pad_dispatch[1] = pad_iso_1
 
 
-def pad_iso9797_2(data: bytes, block_size: Optional[int] = None) -> bytes:
+def pad_iso_2(data: bytes, block_size: Optional[int] = None) -> bytes:
     r"""ISO/IEC 9797-1 padding method 2 (equivalent to ISO/IEC 7816-4).
     Add a mandatory "0x80" byte to the right of data,
     and then add the smallest number of "0x00" bytes to the right
@@ -240,19 +246,19 @@ def pad_iso9797_2(data: bytes, block_size: Optional[int] = None) -> bytes:
     Examples
     --------
     >>> import psec
-    >>> psec.mac.pad_iso9797_2(bytes.fromhex("1234")).hex().upper()
+    >>> psec.mac.pad_iso_2(bytes.fromhex("1234")).hex().upper()
     '1234800000000000'
     """
     if block_size is None:
         block_size = 8
 
-    return pad_iso9797_1(data + b"\x80", block_size)
+    return pad_iso_1(data + b"\x80", block_size)
 
 
-_pad_dispatch[2] = pad_iso9797_2
+_pad_dispatch[2] = pad_iso_2
 
 
-def pad_iso9797_3(data: bytes, block_size: Optional[int] = None) -> bytes:
+def pad_iso_3(data: bytes, block_size: Optional[int] = None) -> bytes:
     r"""ISO/IEC 9797-1 padding method 3.
     The padded data comprises (in this order):
         - The length of the unpadded data (in bits) expressed
@@ -281,13 +287,13 @@ def pad_iso9797_3(data: bytes, block_size: Optional[int] = None) -> bytes:
     Examples
     --------
     >>> import psec
-    >>> psec.mac.pad_iso9797_3(bytes.fromhex("1234")).hex().upper()
+    >>> psec.mac.pad_iso_3(bytes.fromhex("1234")).hex().upper()
     '00000000000000101234000000000000'
     """
     if block_size is None:
         block_size = 8
 
-    return (len(data) * 8).to_bytes(block_size, "big") + pad_iso9797_1(data, block_size)
+    return (len(data) * 8).to_bytes(block_size, "big") + pad_iso_1(data, block_size)
 
 
-_pad_dispatch[3] = pad_iso9797_3
+_pad_dispatch[3] = pad_iso_3

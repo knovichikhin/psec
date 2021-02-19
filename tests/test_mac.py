@@ -15,8 +15,8 @@ from psec import mac
         ("", 4, "00000000"),
     ],
 )
-def test_pad_iso9797_1(data: str, block_len: Optional[int], result: str) -> None:
-    assert result == mac.pad_iso9797_1(bytes.fromhex(data), block_len).hex()
+def test_pad_iso_1(data: str, block_len: Optional[int], result: str) -> None:
+    assert result == mac.pad_iso_1(bytes.fromhex(data), block_len).hex()
 
 
 @pytest.mark.parametrize(
@@ -34,8 +34,8 @@ def test_pad_iso9797_1(data: str, block_len: Optional[int], result: str) -> None
         ("", 4, "80000000"),
     ],
 )
-def test_pad_iso9797_2(data: str, block_len: Optional[int], result: str) -> None:
-    assert result == mac.pad_iso9797_2(bytes.fromhex(data), block_len).hex()
+def test_pad_iso_2(data: str, block_len: Optional[int], result: str) -> None:
+    assert result == mac.pad_iso_2(bytes.fromhex(data), block_len).hex()
 
 
 @pytest.mark.parametrize(
@@ -50,16 +50,16 @@ def test_pad_iso9797_2(data: str, block_len: Optional[int], result: str) -> None
         ("", 4, "0000000000000000"),
     ],
 )
-def test_pad_iso9797_3(data: str, block_len: Optional[int], result: str) -> None:
-    assert result == mac.pad_iso9797_3(bytes.fromhex(data), block_len).hex()
+def test_pad_iso_3(data: str, block_len: Optional[int], result: str) -> None:
+    assert result == mac.pad_iso_3(bytes.fromhex(data), block_len).hex()
 
 
-def test_generate_mac_iso9797_3_exception() -> None:
+def test_generate_retail_mac_exception() -> None:
     with pytest.raises(
         ValueError,
         match="Specify valid padding method: 1, 2 or 3.",
     ):
-        mac.generate_mac_iso9797_3(
+        mac.generate_retail_mac(
             b"AAAAAAAAAAAAAAAA",
             b"BBBBBBBBBBBBBBBB",
             b"hello world",
@@ -81,11 +81,9 @@ def test_generate_mac_iso9797_3_exception() -> None:
         (3, 4, "BA90F750"),
     ],
 )
-def test_generate_mac_iso9797_3(
-    padding: int, length: Optional[int], result: str
-) -> None:
+def test_generate_retail_mac(padding: int, length: Optional[int], result: str) -> None:
     assert result == (
-        mac.generate_mac_iso9797_3(
+        mac.generate_retail_mac(
             b"AAAAAAAAAAAAAAAA", b"BBBBBBBBBBBBBBBB", b"hello world", padding, length
         )
         .hex()
@@ -93,12 +91,12 @@ def test_generate_mac_iso9797_3(
     )
 
 
-def test_generate_mac_iso9797_1_exception() -> None:
+def test_generate_cbc_mac_exception() -> None:
     with pytest.raises(
         ValueError,
         match="Specify valid padding method: 1, 2 or 3.",
     ):
-        mac.generate_mac_iso9797_1(
+        mac.generate_cbc_mac(
             b"AAAAAAAAAAAAAAAA",
             b"hello world",
             4,
@@ -119,11 +117,9 @@ def test_generate_mac_iso9797_1_exception() -> None:
         (3, 4, "CDACA53E"),
     ],
 )
-def test_generate_mac_iso9797_1(
-    padding: int, length: Optional[int], result: str
-) -> None:
+def test_generate_cbc_mac(padding: int, length: Optional[int], result: str) -> None:
     assert result == (
-        mac.generate_mac_iso9797_1(
+        mac.generate_cbc_mac(
             bytes.fromhex("AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB"),
             b"hello world",
             padding,
