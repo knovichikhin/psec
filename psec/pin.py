@@ -268,8 +268,7 @@ def generate_visa_pvv(
     # Form a "Transformed Security Parameter"
     tsp = pan[-12:-1] + pvki + pin
     tsp = _des.encrypt_tdes_ecb(pvk, bytes.fromhex(tsp)).hex()
-    if len("".join(filter(str.isdigit, tsp))) == 3:
-        print(pin, tsp, pan)
+
     # 4 digits from TSP form a PVV
     pvv = "".join(filter(str.isdigit, tsp))[:4]
 
