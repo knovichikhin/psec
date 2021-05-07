@@ -61,7 +61,13 @@ def generate_key_block_a(
     debug_static_random_data: Optional[bytes] = None,
 ) -> str:
     kbek, kbak = _method_a_derive(kbpk)
-    enc_key = _method_a_encrypt(kbek, header, key, random_data=debug_static_random_data)
+    enc_key = _method_a_encrypt(
+        kbek,
+        header,
+        key,
+        extra_pad=mask_key_length,
+        random_data=debug_static_random_data,
+    )
     mac = _method_a_generate_mac(kbak, header, enc_key)
     return header + enc_key.hex().upper() + mac.hex().upper()
 
@@ -76,7 +82,7 @@ def _method_a_encrypt(
     kbek: bytes,
     header: str,
     key: bytes,
-    extra_pad: int = 0,
+    extra_pad: Optional[int] = None,
     random_data: Optional[bytes] = None,
 ) -> bytes:
     """Encrypt DES key data
@@ -85,6 +91,8 @@ def _method_a_encrypt(
 
     key_length = (len(key) * 8).to_bytes(2, "big")
     if random_data is None:
+        if extra_pad is None:
+            extra_pad = 0
         random_data = _secrets.token_bytes(6 + extra_pad)
 
     return _des.encrypt_tdes_cbc(
