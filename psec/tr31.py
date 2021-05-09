@@ -6,7 +6,26 @@ from psec import mac as _mac
 from psec import tools as _tools
 
 
-def _derive_tdes_keys_cmac(kbpk: bytes) -> Tuple[bytes, bytes]:
+def generate_key_block_b(
+    kbpk: bytes,
+    header: str,
+    key: bytes,
+    mask_key_length: Optional[int] = None,
+    debug_static_random_data: Optional[bytes] = None,
+) -> str:
+    kbek, kbak = _method_b_derive(kbpk)
+    enc_key = _method_b_encrypt(
+        kbek,
+        header,
+        key,
+        extra_pad=mask_key_length,
+        random_data=debug_static_random_data,
+    )
+    mac = _method_b_generate_mac(kbak, header, enc_key)
+    return header + enc_key.hex().upper() + mac.hex().upper()
+
+
+def _method_b_derive(kbpk: bytes) -> Tuple[bytes, bytes]:
     """Derive Key Block Encryption and Authentication Keys using CMAC.
     This key derivation method is used in TR31 option B."""
 
@@ -22,30 +41,87 @@ def _derive_tdes_keys_cmac(kbpk: bytes) -> Tuple[bytes, bytes]:
 
     kbek = bytearray()  # encryption key
     kbak = bytearray()  # authentication key
+    k1, _ = _derive_subkey_tdes(kbpk)
 
     for i in range(1, len(kbpk) // 8 + 1):
         # Counter is incremented for each 8 byte block
         counter = i.to_bytes(1, "big")
         kbek += _mac.generate_cbc_mac(
             kbpk,
-            counter
-            + b"\x00\x00"  # Encryption key
-            + b"\x00"  # Mandatory separator
-            + algo
-            + key_length,
+            _tools.xor(
+                counter
+                + b"\x00\x00"  # Encryption key
+                + b"\x00"  # Mandatory separator
+                + algo
+                + key_length,
+                k1,
+            ),
             1,
         )
         kbak += _mac.generate_cbc_mac(
             kbpk,
-            counter
-            + b"\x00\x01"  # Authentication key
-            + b"\x00"  # Mandatory separator
-            + algo
-            + key_length,
+            _tools.xor(
+                counter
+                + b"\x00\x01"  # Authentication key
+                + b"\x00"  # Mandatory separator
+                + algo
+                + key_length,
+                k1,
+            ),
             1,
         )
 
     return bytes(kbek), bytes(kbak)
+
+
+def _derive_subkey_tdes(key: bytes) -> Tuple[bytes, bytes]:
+    r64 = b"\x00\x00\x00\x00\x00\x00\x00\x1B"
+
+    s = _des.encrypt_tdes_ecb(key, b"\x00" * 8)
+
+    if s[0] & 0b10000000:
+        k1 = _tools.xor(_shift_left_by_1(s), r64)
+    else:
+        k1 = _shift_left_by_1(s)
+
+    if k1[0] & 0b10000000:
+        k2 = _tools.xor(_shift_left_by_1(k1), r64)
+    else:
+        k2 = _shift_left_by_1(k1)
+    return k1, k2
+
+
+def _shift_left_by_1(bytes_sequence: bytes) -> bytes:
+    out = bytearray()
+    out += ((bytes_sequence[0] & 0b01111111) << 1).to_bytes(1, "big")
+    for i in range(1, len(bytes_sequence)):
+        if bytes_sequence[i] & 0b10000000:
+            out[i - 1] = out[i - 1] | 0b00000001
+        out += ((bytes_sequence[i] & 0b01111111) << 1).to_bytes(1, "big")
+
+    return bytes(out)
+
+
+def _method_b_encrypt(
+    kbek: bytes,
+    header: str,
+    key: bytes,
+    extra_pad: Optional[int] = None,
+    random_data: Optional[bytes] = None,
+) -> bytes:
+    """Encrypt DES key data
+    extra_pad - must be multiple of 8. Add extra length to hide actual key length
+    """
+
+    key_length = (len(key) * 8).to_bytes(2, "big")
+    if random_data is None:
+        if extra_pad is None:
+            extra_pad = 0
+        random_data = _secrets.token_bytes(6 + extra_pad)
+
+    return _des.encrypt_tdes_cbc(
+        kbek, header.encode("ascii")[:8], key_length + key + random_data
+    )
 
 
 #
