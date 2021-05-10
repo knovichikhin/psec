@@ -11,17 +11,19 @@ def generate_key_block_b(
     header: str,
     key: bytes,
     mask_key_length: Optional[int] = None,
-    debug_static_random_data: Optional[bytes] = None,
+    debug_static_pad: Optional[bytes] = None,
 ) -> str:
     kbek, kbak = _method_b_derive(kbpk)
-    enc_key = _method_b_encrypt(
-        kbek,
-        header,
-        key,
-        extra_pad=mask_key_length,
-        random_data=debug_static_random_data,
-    )
-    mac = _method_b_generate_mac(kbak, header, enc_key)
+
+    if debug_static_pad is None:
+        if mask_key_length is None:
+            mask_key_length = 0
+        pad = _secrets.token_bytes(6 + mask_key_length)
+    else:
+        pad = debug_static_pad
+
+    mac = _method_b_generate_mac(kbak, header, key, pad)
+    enc_key = _method_b_encrypt(kbek, key, mac, pad)
     return header + enc_key.hex().upper() + mac.hex().upper()
 
 
@@ -104,24 +106,21 @@ def _shift_left_by_1(bytes_sequence: bytes) -> bytes:
 
 def _method_b_encrypt(
     kbek: bytes,
-    header: str,
     key: bytes,
-    extra_pad: Optional[int] = None,
-    random_data: Optional[bytes] = None,
+    mac: bytes,
+    pad: bytes,
 ) -> bytes:
-    """Encrypt DES key data
-    extra_pad - must be multiple of 8. Add extra length to hide actual key length
-    """
-
     key_length = (len(key) * 8).to_bytes(2, "big")
-    if random_data is None:
-        if extra_pad is None:
-            extra_pad = 0
-        random_data = _secrets.token_bytes(6 + extra_pad)
+    return _des.encrypt_tdes_cbc(kbek, mac, key_length + key + pad)
 
-    return _des.encrypt_tdes_cbc(
-        kbek, header.encode("ascii")[:8], key_length + key + random_data
-    )
+def _method_b_generate_mac(kbak: bytes, header: str, key: bytes,
+    pad: bytes,) -> bytes:
+    """Generate MAC over header and encrypted key"""
+    km1, _ = _derive_subkey_tdes(kbak)
+    binary_data = header.encode("ascii") + (len(key) * 8).to_bytes(2, "big") + key + pad
+    binary_data = binary_data[:-8] + _tools.xor(binary_data[-8:], km1)
+    mac = _mac.generate_cbc_mac(kbak, binary_data, 1)
+    return mac
 
 
 #
@@ -134,7 +133,7 @@ def generate_key_block_a(
     header: str,
     key: bytes,
     mask_key_length: Optional[int] = None,
-    debug_static_random_data: Optional[bytes] = None,
+    debug_static_pad: Optional[bytes] = None,
 ) -> str:
     kbek, kbak = _method_a_derive(kbpk)
     enc_key = _method_a_encrypt(
@@ -142,7 +141,7 @@ def generate_key_block_a(
         header,
         key,
         extra_pad=mask_key_length,
-        random_data=debug_static_random_data,
+        random_data=debug_static_pad,
     )
     mac = _method_a_generate_mac(kbak, header, enc_key)
     return header + enc_key.hex().upper() + mac.hex().upper()
