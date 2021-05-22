@@ -14,4 +14,4 @@ psec modules:
 __version__ = "1.0.1"
 __author__ = "Konstantin Novichikhin <konstantin.novichikhin@gmail.com>"
 
-from psec import cvv, des, mac, pin, pinblock, tools
+from psec import cvv, des, mac, pin, pinblock, tools, tr31
