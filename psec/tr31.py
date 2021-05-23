@@ -90,7 +90,6 @@ def generate_key_block_b(
 
     kbek, kbak = _method_b_derive(kbpk)
     pad = _secrets.token_bytes(6 + extra_pad)
-    pad = b"\x30\x11\x1D\x18\xCC\x4C"
     mac = _method_b_generate_mac(kbak, header, key, pad)
     enc_key = _method_b_encrypt(kbek, key, mac, pad)
     return header + enc_key.hex().upper() + mac.hex().upper()
