@@ -5,7 +5,7 @@ from psec import des as _des
 from psec import mac as _mac
 from psec import tools as _tools
 
-__all__ = ["generate_key_block_a", "generate_key_block_b"]
+__all__ = ["generate_key_block_b", "generate_key_block_c"]
 
 #
 # Version B: DES key derivation
@@ -193,7 +193,7 @@ def _derive_cmac_subkey_des(key: bytes) -> Tuple[bytes, bytes]:
 #
 
 
-def generate_key_block_a(
+def generate_key_block_c(
     kbpk: bytes, header: str, key: bytes, extra_pad: int = 0
 ) -> str:
     """Generate TR-31 key block version A or C.
@@ -269,20 +269,14 @@ def generate_key_block_a(
     if extra_pad % 8 != 0:
         raise ValueError("Additional number of random pad bytes must be multiple of 8")
 
-    kbek, kbak = _method_a_derive(kbpk)
-    enc_key = _method_a_encrypt(kbek, header, key, extra_pad)
-    mac = _method_a_generate_mac(kbak, header, enc_key)
+    kbek = _tools.xor(kbpk, b"\x45" * len(kbpk))  # Key Block Encryption Key
+    kbak = _tools.xor(kbpk, b"\x4D" * len(kbpk))  # Key Block Authentication Key
+    enc_key = _method_c_encrypt(kbek, header, key, extra_pad)
+    mac = _method_c_generate_mac(kbak, header, enc_key)
     return header + enc_key.hex().upper() + mac.hex().upper()
 
 
-def _method_a_derive(kbpk: bytes) -> Tuple[bytes, bytes]:
-    """Derive Key Block Encryption and Authentication Keys"""
-    kbek = _tools.xor(kbpk, b"\x45" * len(kbpk))
-    kbak = _tools.xor(kbpk, b"\x4D" * len(kbpk))
-    return (kbek, kbak)
-
-
-def _method_a_encrypt(kbek: bytes, header: str, key: bytes, extra_pad: int) -> bytes:
+def _method_c_encrypt(kbek: bytes, header: str, key: bytes, extra_pad: int) -> bytes:
     """Encrypt key using KBEK"""
     key_length = (len(key) * 8).to_bytes(2, "big")
     random_data = _secrets.token_bytes(6 + extra_pad)
@@ -291,6 +285,6 @@ def _method_a_encrypt(kbek: bytes, header: str, key: bytes, extra_pad: int) -> b
     )
 
 
-def _method_a_generate_mac(kbak: bytes, header: str, enc_key: bytes) -> bytes:
+def _method_c_generate_mac(kbak: bytes, header: str, enc_key: bytes) -> bytes:
     """Generate MAC using KBAK"""
     return _mac.generate_cbc_mac(kbak, header.encode("ascii") + enc_key, 1, 4)
