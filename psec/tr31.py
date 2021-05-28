@@ -288,7 +288,7 @@ def _method_c_generate_mac(kbak: bytes, header: str, enc_key: bytes) -> bytes:
 
 
 class Header:
-    _mac_length = {"A": 8, "B": 16, "C": 8, "D": 16}
+    _mac_length = {"A": 8, "B": 16, "C": 8, "D": 32}
 
     _block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
 
