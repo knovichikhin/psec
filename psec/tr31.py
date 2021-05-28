@@ -62,7 +62,7 @@ def wrap_b(kbpk: bytes, header: str, key: bytes, extra_pad: int = 0) -> str:
     Examples
     --------
     >>> import psec
-    >>> psec.tr31.generate_key_block_b(
+    >>> psec.tr31.wrap_b(
     ...     kbpk = bytes.fromhex("11111111111111112222222222222222"),
     ...     header = "B0080P0TE00E0000",
     ...     key = bytes.fromhex("33333333333333334444444444444444"))  # doctest: +SKIP
@@ -241,7 +241,7 @@ def wrap_c(kbpk: bytes, header: str, key: bytes, extra_pad: int = 0) -> str:
     Examples
     --------
     >>> import psec
-    >>> psec.tr31.generate_key_block_a(
+    >>> psec.tr31.wrap_c(
     ...     kbpk = bytes.fromhex("11111111111111112222222222222222"),
     ...     header = "A0072P0TE00E0000",
     ...     key = bytes.fromhex("33333333333333334444444444444444"))  # doctest: +SKIP
