@@ -131,7 +131,9 @@ def unwrap_b(kbpk: bytes, header: str, key_and_mac: str) -> bytes:
         raise ValueError(f"Encrypted key is invalid: '{key_and_mac[-16:]}'")
 
     if len(enc_key) < 8 or len(enc_key) % 8 != 0:
-        raise ValueError(f"Encrypted key length must be multiple of 8: '{key_and_mac[-16:]}'")
+        raise ValueError(
+            f"Encrypted key length must be multiple of 8: '{key_and_mac[-16:]}'"
+        )
 
     kbek, kbak = _method_b_derive(kbpk)
     key_data = _method_b_decrypt(kbek, enc_key, received_mac)
@@ -140,11 +142,11 @@ def unwrap_b(kbpk: bytes, header: str, key_and_mac: str) -> bytes:
     if key_length < 64 or key_length % 64 != 0:
         raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
 
-    key = key_data[2:(key_length // 8) + 2]
+    key = key_data[2 : (key_length // 8) + 2]
     if len(key) != key_length // 8:
         raise ValueError(f"Decrypted key length is invalid: '{key.hex().upper()}'")
 
-    pad = key_data[len(key) + 2:]
+    pad = key_data[len(key) + 2 :]
 
     mac = _method_b_generate_mac(kbak, header, key, pad)
     if mac != received_mac:
