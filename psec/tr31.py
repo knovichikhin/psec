@@ -136,18 +136,7 @@ def unwrap_b(kbpk: bytes, header: str, key_and_mac: str) -> bytes:
         )
 
     kbek, kbak = _method_b_derive(kbpk)
-    key_data = _method_b_decrypt(kbek, enc_key, received_mac)
-
-    key_length = int.from_bytes(key_data[0:2], "big", signed=False)
-    if key_length < 64 or key_length % 64 != 0:
-        raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
-
-    key = key_data[2 : (key_length // 8) + 2]
-    if len(key) != key_length // 8:
-        raise ValueError(f"Decrypted key length is invalid: '{key.hex().upper()}'")
-
-    pad = key_data[len(key) + 2 :]
-
+    key, pad = _method_b_decrypt(kbek, enc_key, received_mac)
     mac = _method_b_generate_mac(kbak, header, key, pad)
     if mac != received_mac:
         raise ValueError(f"Key block MAC does not match: '{mac.hex().upper()}'")
@@ -208,9 +197,19 @@ def _method_b_encrypt(kbek: bytes, key: bytes, mac: bytes, pad: bytes) -> bytes:
     return _des.encrypt_tdes_cbc(kbek, mac, key_length + key + pad)
 
 
-def _method_b_decrypt(kbek: bytes, key: bytes, mac: bytes) -> bytes:
-    """Decrypt key using KBEK"""
-    return _des.decrypt_tdes_cbc(kbek, mac, key)
+def _method_b_decrypt(kbek: bytes, key: bytes, mac: bytes) -> Tuple[bytes, bytes]:
+    """Decrypt key using KBEK. Return decrypted key and pad."""
+    key_data = _des.decrypt_tdes_cbc(kbek, mac, key)
+
+    key_length = int.from_bytes(key_data[0:2], "big", signed=False)
+    if key_length < 64 or key_length % 64 != 0:
+        raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
+
+    key = key_data[2 : (key_length // 8) + 2]
+    if len(key) != key_length // 8:
+        raise ValueError(f"Decrypted key length is invalid: '{key.hex().upper()}'")
+
+    return key, key_data[len(key) + 2 :]
 
 
 def _method_b_generate_mac(kbak: bytes, header: str, key: bytes, pad: bytes) -> bytes:
