@@ -5,7 +5,19 @@ from psec import des as _des
 from psec import mac as _mac
 from psec import tools as _tools
 
-__all__ = ["wrap_b", "wrap_c"]
+__all__ = ["wrap_b", "wrap_c", "unwrap_b", "unwrap_c", "KeyBlock", "Header"]
+
+
+_ascii_alphanumeric = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+_ascii_digit = "0123456789"
+
+
+def _is_ascii_alphanumeric(s: str) -> bool:
+    return all(c in _ascii_alphanumeric for c in s)
+
+
+def _is_ascii_numeric(s: str) -> bool:
+    return all(c in _ascii_digit for c in s)
 
 
 #
@@ -94,6 +106,53 @@ def wrap_b(kbpk: bytes, header: str, key: bytes, extra_pad: int = 0) -> str:
     return header + enc_key.hex().upper() + mac.hex().upper()
 
 
+def unwrap_b(kbpk: bytes, header: str, key_and_mac: str) -> bytes:
+
+    if len(kbpk) not in (16, 24):
+        raise ValueError("KBPK must be a double or triple DES key")
+
+    if len(header) < 16:
+        raise ValueError("Key block header must be at a minimum 16 characters long")
+
+    if len(header) % 8 != 0:
+        raise ValueError("Key block header length must be multiple of 8")
+
+    try:
+        received_mac = bytes.fromhex(key_and_mac[-16:])
+    except ValueError:
+        raise ValueError(f"Key block MAC is invalid: '{key_and_mac[-16:]}'")
+
+    if len(received_mac) != 8:
+        raise ValueError(f"Key block MAC length must be 16: '{key_and_mac[-16:]}'")
+
+    try:
+        enc_key = bytes.fromhex(key_and_mac[:-16])
+    except ValueError:
+        raise ValueError(f"Encrypted key is invalid: '{key_and_mac[-16:]}'")
+
+    if len(enc_key) < 8 or len(enc_key) % 8 != 0:
+        raise ValueError(f"Encrypted key length must be multiple of 8: '{key_and_mac[-16:]}'")
+
+    kbek, kbak = _method_b_derive(kbpk)
+    key_data = _method_b_decrypt(kbek, enc_key, received_mac)
+
+    key_length = int.from_bytes(key_data[0:2], "big", signed=False)
+    if key_length < 64 or key_length % 64 != 0:
+        raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
+
+    key = key_data[2:(key_length // 8) + 2]
+    if len(key) != key_length // 8:
+        raise ValueError(f"Decrypted key length is invalid: '{key.hex().upper()}'")
+
+    pad = key_data[len(key) + 2:]
+
+    mac = _method_b_generate_mac(kbak, header, key, pad)
+    if mac != received_mac:
+        raise ValueError(f"Key block MAC does not match: '{mac.hex().upper()}'")
+
+    return key
+
+
 def _method_b_derive(kbpk: bytes) -> Tuple[bytes, bytes]:
     """Derive Key Block Encryption and Authentication Keys"""
 
@@ -145,6 +204,11 @@ def _method_b_encrypt(kbek: bytes, key: bytes, mac: bytes, pad: bytes) -> bytes:
     """Encrypt key using KBEK"""
     key_length = (len(key) * 8).to_bytes(2, "big")
     return _des.encrypt_tdes_cbc(kbek, mac, key_length + key + pad)
+
+
+def _method_b_decrypt(kbek: bytes, key: bytes, mac: bytes) -> bytes:
+    """Decrypt key using KBEK"""
+    return _des.decrypt_tdes_cbc(kbek, mac, key)
 
 
 def _method_b_generate_mac(kbak: bytes, header: str, key: bytes, pad: bytes) -> bytes:
@@ -307,13 +371,30 @@ class Header:
         mode_of_use: str = "0",
         version_num: str = "00",
         exportability: str = "0",
+        reserved: str = "00",
+        block_length: str = "0000",
     ) -> None:
         self.version_id = version_id
+        self.block_length = block_length
         self.key_usage = key_usage
         self.algorithm = algorithm
         self.mode_of_use = mode_of_use
         self.version_num = version_num
         self.exportability = exportability
+        self.reserved = reserved
+
+    def __str__(self) -> str:
+        return (
+            self.version_id
+            + self.block_length
+            + self.key_usage
+            + self.algorithm
+            + self.mode_of_use
+            + self.version_num
+            + self.exportability
+            + "00"  # Number of optional blocks
+            + self.reserved
+        )
 
     @property
     def version_id(self) -> str:
@@ -322,8 +403,18 @@ class Header:
     @version_id.setter
     def version_id(self, version_id: Literal["A", "B", "C", "D"]) -> None:
         if version_id not in ("A", "B", "C", "D"):
-            raise ValueError(f"Version ID `{version_id}` is not supported")
+            raise ValueError(f"Version ID is not supported: '{version_id}'")
         self._version_id = version_id
+
+    @property
+    def block_length(self) -> str:
+        return self._block_length
+
+    @block_length.setter
+    def block_length(self, block_length: str) -> None:
+        if len(block_length) != 4 or not _is_ascii_numeric(block_length):
+            raise ValueError(f"Block length is invalid: '{block_length}'")
+        self._block_length = block_length
 
     @property
     def key_usage(self) -> str:
@@ -331,9 +422,9 @@ class Header:
 
     @key_usage.setter
     def key_usage(self, key_usage: str) -> None:
-        if len(key_usage) != 2 or not self._is_ascii_alphanumeric(key_usage):
-            raise ValueError(f"Key Usage `{key_usage}` is not valid")
-        self._key_usage = key_usage.upper()
+        if len(key_usage) != 2 or not _is_ascii_alphanumeric(key_usage):
+            raise ValueError(f"Key Usage is invalid: '{key_usage}'")
+        self._key_usage = key_usage
 
     @property
     def algorithm(self) -> str:
@@ -341,9 +432,9 @@ class Header:
 
     @algorithm.setter
     def algorithm(self, algorithm: str) -> None:
-        if len(algorithm) != 1 or not self._is_ascii_alphanumeric(algorithm):
-            raise ValueError(f"Algorithm `{algorithm}` is not valid")
-        self._algorithm = algorithm.upper()
+        if len(algorithm) != 1 or not _is_ascii_alphanumeric(algorithm):
+            raise ValueError(f"Algorithm is invalid: '{algorithm}'")
+        self._algorithm = algorithm
 
     @property
     def mode_of_use(self) -> str:
@@ -351,9 +442,9 @@ class Header:
 
     @mode_of_use.setter
     def mode_of_use(self, mode_of_use: str) -> None:
-        if len(mode_of_use) != 1 or not self._is_ascii_alphanumeric(mode_of_use):
-            raise ValueError(f"Mode of use `{mode_of_use}` is not valid")
-        self._mode_of_use = mode_of_use.upper()
+        if len(mode_of_use) != 1 or not _is_ascii_alphanumeric(mode_of_use):
+            raise ValueError(f"Mode of use is invalid: '{mode_of_use}'")
+        self._mode_of_use = mode_of_use
 
     @property
     def version_num(self) -> str:
@@ -361,8 +452,8 @@ class Header:
 
     @version_num.setter
     def version_num(self, version_num: str) -> None:
-        if len(version_num) != 2 or not self._is_ascii_alphanumeric(version_num):
-            raise ValueError(f"Version number `{version_num}` is not valid")
+        if len(version_num) != 2 or not _is_ascii_alphanumeric(version_num):
+            raise ValueError(f"Version number is invalid: '{version_num}'")
         self._version_num = version_num
 
     @property
@@ -371,16 +462,22 @@ class Header:
 
     @exportability.setter
     def exportability(self, exportability: str) -> None:
-        if len(exportability) != 1 or not self._is_ascii_alphanumeric(exportability):
-            raise ValueError(f"Exportability `{exportability}` is not valid")
-        self._exportability = exportability.upper()
+        if len(exportability) != 1 or not _is_ascii_alphanumeric(exportability):
+            raise ValueError(f"Exportability is invalid: '{exportability}'")
+        self._exportability = exportability
 
-    def _is_ascii_alphanumeric(self, s: str) -> bool:
-        ascii_an = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        return all(c in ascii_an for c in s)
+    @property
+    def reserved(self) -> str:
+        return self._reserved
+
+    @reserved.setter
+    def reserved(self, reserved: str) -> None:
+        if len(reserved) != 2 or not _is_ascii_alphanumeric(reserved):
+            raise ValueError(f"Reserved field is invalid: '{reserved}'")
+        self._reserved = reserved
 
     def dump(self, key_length: int, extra_pad: int = 0) -> str:
-        """Format TR-31 header"""
+        """Format TR-31 header into string"""
 
         if key_length not in self._valid_key_sizes[self.version_id]:
             valid_sizes = ", ".join(map(str, self._valid_key_sizes[self.version_id]))
@@ -405,8 +502,8 @@ class Header:
             + self._mac_length[self.version_id]
         )
 
-        if block_length > 9999:
-            ValueError("Key block exceeds maximum length of 9999")
+        if block_length > 9992:
+            ValueError(f"Key block length {str(block_length)} exceeds maximum of 9992")
 
         return (
             self.version_id
@@ -417,8 +514,31 @@ class Header:
             + self.version_num
             + self.exportability
             + "00"  # Number of optional blocks
-            + "00"  # RFU
+            + self.reserved
         )
+
+    def load(self, header: str) -> int:
+        """Load TR-31 header from string"""
+
+        if not _is_ascii_alphanumeric(header):
+            raise ValueError("Header must be ASCII alphanumeric")
+
+        if len(header) % 8 != 0:
+            raise ValueError("Header must be multiple of 8")
+
+        if len(header) < 16:
+            raise ValueError("Header must be at a minimum 16 characters long")
+
+        self.version_id = header[0]
+        self.block_length = header[1:5]
+        self.key_usage = header[5:7]
+        self.algorithm = header[7]
+        self.mode_of_use = header[8]
+        self.version_num = header[9:11]
+        self.exportability = header[11]
+        self.reserved = header[14:16]
+
+        return 16
 
 
 class KeyBlock:
@@ -428,19 +548,50 @@ class KeyBlock:
         "C": wrap_c,
     }
 
+    _unwrap_dispatch: Dict[str, Callable[[bytes, str, str], bytes]] = {
+        "A": unwrap_b,
+        "B": unwrap_b,
+        "C": unwrap_b,
+    }
+
     def __init__(self, kbpk: bytes, header: Optional[Header] = None) -> None:
         self.kbpk = kbpk
         self.header = header or Header()
 
-    def unwrap(self, tr31_key_block: str) -> bytes:
-        return b"\xFF" * 8
+    def unwrap(self, key_block: str) -> bytes:
+        if not _is_ascii_alphanumeric(key_block):
+            raise ValueError("Key block must be ASCII alphanumeric")
+
+        if len(key_block) % 8 != 0:
+            raise ValueError("Key block must be multiple of 8")
+
+        try:
+            key_block_length = int(key_block[1:5])
+        except ValueError:
+            raise ValueError(f"Key block length is invalid: '{key_block[1:5]}'")
+
+        if key_block_length != len(key_block):
+            raise ValueError(
+                f"Key block length '{key_block[1:5]}' doesn't match data length {str(key_block_length)}"
+            )
+
+        header_length = self.header.load(key_block)
+
+        try:
+            unwrap = self._unwrap_dispatch[self.header.version_id]
+        except KeyError:
+            raise ValueError(
+                f"Key block version ID is not supported: '{self.header.version_id}'"
+            )
+
+        return unwrap(self.kbpk, key_block[:header_length], key_block[header_length:])
 
     def wrap(self, key: bytes, extra_pad: int = 0) -> str:
         try:
             wrap = self._wrap_dispatch[self.header.version_id]
         except KeyError:
             raise ValueError(
-                f"Key block version ID {self.header.version_id} is not supported"
+                f"Key block version ID is not supported: '{self.header.version_id}'"
             )
 
         return wrap(self.kbpk, self.header.dump(len(key), extra_pad), key, extra_pad)
