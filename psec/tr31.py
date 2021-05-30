@@ -66,7 +66,7 @@ def wrap_b(kbpk: bytes, header: str, key: bytes, extra_pad: int = 0) -> str:
     'B0080P0TE00E0000809A8F0866A01A5A717900602BE435161A24128E75338A2B3AC48A831ABFCEE5'
     """
 
-    if len(kbpk) not in (16, 24):
+    if len(kbpk) not in {16, 24}:
         raise ValueError("KBPK must be a double or triple DES key")
 
     if len(header) < 16:
@@ -75,7 +75,7 @@ def wrap_b(kbpk: bytes, header: str, key: bytes, extra_pad: int = 0) -> str:
     if len(header) % 8 != 0:
         raise ValueError("Key block header length must be multiple of 8")
 
-    if len(key) not in (16, 24):
+    if len(key) not in {16, 24}:
         raise ValueError("Key must be a double or triple DES key")
 
     if len(key) > len(kbpk):
@@ -93,7 +93,7 @@ def wrap_b(kbpk: bytes, header: str, key: bytes, extra_pad: int = 0) -> str:
 
 def unwrap_b(kbpk: bytes, header: str, key_and_mac: str) -> bytes:
 
-    if len(kbpk) not in (16, 24):
+    if len(kbpk) not in {16, 24}:
         raise ValueError("KBPK must be a double or triple DES key")
 
     if len(header) < 16:
@@ -294,7 +294,7 @@ def wrap_c(kbpk: bytes, header: str, key: bytes, extra_pad: int = 0) -> str:
     'A0072P0TE00E0000C05F5CD188E4CA22D6E8B28C182E87F6907F4569CB3624C336A33E1E'
     """
 
-    if len(kbpk) not in (8, 16, 24):
+    if len(kbpk) not in {8, 16, 24}:
         raise ValueError("KBPK must be a single, double or triple DES key")
 
     if len(header) < 16:
@@ -303,7 +303,7 @@ def wrap_c(kbpk: bytes, header: str, key: bytes, extra_pad: int = 0) -> str:
     if len(header) % 8 != 0:
         raise ValueError("Key block header length must be multiple of 8")
 
-    if len(key) not in (8, 16, 24):
+    if len(key) not in {8, 16, 24}:
         raise ValueError("Key must be a single, double or triple DES key")
 
     if len(key) > len(kbpk):
@@ -401,7 +401,7 @@ class Header:
 
     @version_id.setter
     def version_id(self, version_id: str) -> None:
-        if version_id not in ("A", "B", "C", "D"):
+        if version_id not in {"A", "B", "C", "D"}:
             raise ValueError(f"Version ID is not supported: '{version_id}'")
         self._version_id = version_id
 
@@ -651,12 +651,12 @@ class TR31KeyBlock:
     def _b_wrap(self, header: str, key: bytes, extra_pad: int = 0) -> str:
         """Wrap key into TR-31 key block version B"""
 
-        if len(self.kbpk) not in (16, 24):
+        if len(self.kbpk) not in {16, 24}:
             raise ValueError(
                 f"KBPK must be a double or triple DES key: '{str(len(self.kbpk))}'"
             )
 
-        if len(key) not in (16, 24):
+        if len(key) not in {16, 24}:
             raise ValueError(
                 f"Key must be a double or triple DES key: '{str(len(key))}'"
             )
@@ -673,7 +673,7 @@ class TR31KeyBlock:
     def _b_unwrap(self, header: str, enc_key: bytes, received_mac: bytes) -> bytes:
         """Unwrap key from TR-31 key block version B"""
 
-        if len(self.kbpk) not in (16, 24):
+        if len(self.kbpk) not in {16, 24}:
             raise ValueError(
                 f"KBPK must be a double or triple DES key: '{str(len(self.kbpk))}'"
             )
@@ -693,12 +693,12 @@ class TR31KeyBlock:
     def _c_wrap(self, header: str, key: bytes, extra_pad: int = 0) -> str:
         """Wrap key into TR-31 key block version A or C"""
 
-        if len(self.kbpk) not in (8, 16, 24):
+        if len(self.kbpk) not in {8, 16, 24}:
             raise ValueError(
                 f"KBPK must be a single, double or triple DES key: '{str(len(self.kbpk))}'"
             )
 
-        if len(key) not in (8, 16, 24):
+        if len(key) not in {8, 16, 24}:
             raise ValueError(
                 f"Key must be a single, double or triple DES key: '{str(len(key))}'"
             )
@@ -714,7 +714,7 @@ class TR31KeyBlock:
     def _c_unwrap(self, header: str, enc_key: bytes, received_mac: bytes) -> bytes:
         """Unwrap key from TR-31 key block version A or C"""
 
-        if len(self.kbpk) not in (8, 16, 24):
+        if len(self.kbpk) not in {8, 16, 24}:
             raise ValueError(
                 f"KBPK must be a single, double or triple DES key: '{str(len(self.kbpk))}'"
             )
