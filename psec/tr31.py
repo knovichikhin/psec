@@ -7,209 +7,11 @@ from psec import tools as _tools
 
 __all__ = ["wrap", "unwrap", "KeyBlock", "Header"]
 
-# Version B
 
-
-def wrap_b(kbpk: bytes, header: str, key: bytes, extra_pad: int = 0) -> str:
-    """Generate TR-31 key block version B.
-
-    Parameters
-    ----------
-    kbpk : bytes
-        Key Block Protection Key.
-        The length of the KBPK must equal or greater
-        than the key to be protected.
-        Must be a valid DES key.
-    header : str
-        TR-31 key block header.
-        This function does not validate the contents
-        of the header. It will check that the header
-        fullfils minimum length requirement and
-        is multiple of 8 bytes.
-    key : bytes
-        DES key to be protected.
-    extra_pad : int
-        Add a number of extra bytes of random data to
-        the key to mask true key length.
-        Must be multiple of 8. Default 0.
-        For example, to make double DES key appear as
-        a triple DES set extra_pad to 8.
-
-    Returns
-    -------
-    tr31_key_block : str
-        Key formatted in a TR-31 key block and encrypted
-        under the KBPK.
-
-    Raises
-    ------
-    ValueError
-        KBPK must be a double or triple DES key
-        Key block header must be at a minimum 16 characters long
-        Key block header length must be multiple of 8
-        Key must be a double or triple DES key
-        Key must not be longer than KBPK
-        Additional number of random pad bytes must be multiple of 8
-
-    Notes
-    -----
-    TR-31 version C is identical to version A with exception
-    of some of the key headers values that have been clarified.
-
-    Examples
-    --------
-    >>> import psec
-    >>> psec.tr31.wrap_b(
-    ...     kbpk = bytes.fromhex("11111111111111112222222222222222"),
-    ...     header = "B0080P0TE00E0000",
-    ...     key = bytes.fromhex("33333333333333334444444444444444"))  # doctest: +SKIP
-    'B0080P0TE00E0000809A8F0866A01A5A717900602BE435161A24128E75338A2B3AC48A831ABFCEE5'
-    """
-
-    if len(kbpk) not in {16, 24}:
-        raise ValueError("KBPK must be a double or triple DES key")
-
-    if len(header) < 16:
-        raise ValueError("Key block header must be at a minimum 16 characters long")
-
-    if len(header) % 8 != 0:
-        raise ValueError("Key block header length must be multiple of 8")
-
-    if len(key) not in {16, 24}:
-        raise ValueError("Key must be a double or triple DES key")
-
-    if len(key) > len(kbpk):
-        raise ValueError("Key must not be longer than KBPK")
-
-    if extra_pad % 8 != 0:
-        raise ValueError(f"Extra pad must be multiple of 8: {str(extra_pad)}")
-
-    kbek, kbak = _b_derive(kbpk)
-    pad = _secrets.token_bytes(6 + extra_pad)
-    mac = _b_generate_mac(kbak, header, key, pad)
-    enc_key = _b_encrypt(kbek, key, mac, pad)
-    return header + enc_key.hex().upper() + mac.hex().upper()
-
-
-def unwrap_b(kbpk: bytes, header: str, key_and_mac: str) -> bytes:
-
-    if len(kbpk) not in {16, 24}:
-        raise ValueError("KBPK must be a double or triple DES key")
-
-    if len(header) < 16:
-        raise ValueError("Key block header must be at a minimum 16 characters long")
-
-    if len(header) % 8 != 0:
-        raise ValueError("Key block header length must be multiple of 8")
-
-    try:
-        received_mac = bytes.fromhex(key_and_mac[-16:])
-    except ValueError:
-        raise ValueError(f"Key block MAC is invalid: '{key_and_mac[-16:]}'")
-
-    if len(received_mac) != 8:
-        raise ValueError(f"Key block MAC length must be 16: '{key_and_mac[-16:]}'")
-
-    try:
-        enc_key = bytes.fromhex(key_and_mac[:-16])
-    except ValueError:
-        raise ValueError(f"Encrypted key is invalid: '{key_and_mac[-16:]}'")
-
-    if len(enc_key) < 8 or len(enc_key) % 8 != 0:
-        raise ValueError(
-            f"Encrypted key length must be multiple of 8: '{key_and_mac[-16:]}'"
-        )
-
-    kbek, kbak = _b_derive(kbpk)
-    key, pad = _b_decrypt(kbek, enc_key, received_mac)
-    mac = _b_generate_mac(kbak, header, key, pad)
-    if mac != received_mac:
-        raise ValueError(f"Key block MAC does not match: '{mac.hex().upper()}'")
-
-    return key
-
-
-def _b_derive(kbpk: bytes) -> Tuple[bytes, bytes]:
-    """Derive Key Block Encryption and Authentication Keys"""
-
-    if len(kbpk) == 16:
-        # 2-key DES
-        algo = b"\x00\x00"
-        key_length = b"\00\x80"
-    else:
-        # 3-key DES
-        algo = b"\x00\x01"
-        key_length = b"\00\xC0"
-
-    kbek = bytearray()  # encryption key
-    kbak = bytearray()  # authentication key
-    k1, _ = _derive_tdes_cmac_subkey(kbpk)
-
-    for i in range(1, len(kbpk) // 8 + 1):
-        # Counter is incremented for each 8 byte block
-        counter = i.to_bytes(1, "big")
-        kbek += _mac.generate_cbc_mac(
-            kbpk,
-            _tools.xor(
-                counter
-                + b"\x00\x00"  # Encryption key
-                + b"\x00"  # Mandatory separator
-                + algo
-                + key_length,
-                k1,
-            ),
-            1,
-        )
-        kbak += _mac.generate_cbc_mac(
-            kbpk,
-            _tools.xor(
-                counter
-                + b"\x00\x01"  # Authentication key
-                + b"\x00"  # Mandatory separator
-                + algo
-                + key_length,
-                k1,
-            ),
-            1,
-        )
-
-    return bytes(kbek), bytes(kbak)
-
-
-def _b_encrypt(kbek: bytes, key: bytes, mac: bytes, pad: bytes) -> bytes:
-    """Encrypt key using KBEK"""
-    key_length = (len(key) * 8).to_bytes(2, "big")
-    return _des.encrypt_tdes_cbc(kbek, mac, key_length + key + pad)
-
-
-def _b_decrypt(kbek: bytes, enc_key: bytes, mac: bytes) -> Tuple[bytes, bytes]:
-    """Decrypt key using KBEK. Return decrypted key and pad."""
-    key_data = _des.decrypt_tdes_cbc(kbek, mac, enc_key)
-
-    key_length = int.from_bytes(key_data[0:2], "big")
-    if key_length < 64 or key_length % 64 != 0:
-        raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
-
-    key = key_data[2 : (key_length // 8) + 2]
-    if len(key) != key_length // 8:
-        raise ValueError(f"Decrypted key length is invalid: '{key.hex().upper()}'")
-
-    return key, key_data[len(key) + 2 :]
-
-
-def _b_generate_mac(kbak: bytes, header: str, key: bytes, pad: bytes) -> bytes:
-    """Generate MAC using KBAK"""
-    km1, _ = _derive_tdes_cmac_subkey(kbak)
-    binary_data = header.encode("ascii") + (len(key) * 8).to_bytes(2, "big") + key + pad
-    binary_data = binary_data[:-8] + _tools.xor(binary_data[-8:], km1)
-    mac = _mac.generate_cbc_mac(kbak, binary_data, 1)
-    return mac
-
-
-def _derive_tdes_cmac_subkey(key: bytes) -> Tuple[bytes, bytes]:
+def derive_tdes_cmac_subkey(key: bytes) -> Tuple[bytes, bytes]:
     """Derive two subkeys from a DES key. Each subkey is 8 bytes."""
 
-    def _shift_left_by_1(in_bytes: bytes) -> bytes:
+    def shift_left_1(in_bytes: bytes) -> bytes:
         """Shift byte array left by 1 bit"""
         in_bytes = bytearray(in_bytes)
         in_bytes[0] = in_bytes[0] & 0b01111111
@@ -221,141 +23,19 @@ def _derive_tdes_cmac_subkey(key: bytes) -> Tuple[bytes, bytes]:
     s = _des.encrypt_tdes_ecb(key, b"\x00" * 8)
 
     if s[0] & 0b10000000:
-        k1 = _tools.xor(_shift_left_by_1(s), r64)
+        k1 = _tools.xor(shift_left_1(s), r64)
     else:
-        k1 = _shift_left_by_1(s)
+        k1 = shift_left_1(s)
 
     if k1[0] & 0b10000000:
-        k2 = _tools.xor(_shift_left_by_1(k1), r64)
+        k2 = _tools.xor(shift_left_1(k1), r64)
     else:
-        k2 = _shift_left_by_1(k1)
+        k2 = shift_left_1(k1)
 
     return k1, k2
 
 
-#
-# Version ID A and C: DES variant
-#
-
-
-def wrap_c(kbpk: bytes, header: str, key: bytes, extra_pad: int = 0) -> str:
-    """Generate TR-31 key block version A or C.
-
-    Parameters
-    ----------
-    kbpk : bytes
-        Key Block Protection Key.
-        The length of the KBPK must equal or greater
-        than the key to be protected.
-        Must be a valid DES key.
-    header : str
-        TR-31 key block header.
-        This function does not validate the contents
-        of the header. It will check that the header
-        fullfils minimum length requirement and
-        is multiple of 8 bytes.
-    key : bytes
-        DES key to be protected.
-    extra_pad : int
-        Add a number of extra bytes of random data to
-        the key to mask true key length.
-        Must be multiple of 8. Default 0.
-        For example, to make double DES key appear as
-        a triple DES set extra_pad to 8.
-
-    Returns
-    -------
-    tr31_key_block : str
-        Key formatted in a TR-31 key block and encrypted
-        under the KBPK.
-
-    Raises
-    ------
-    ValueError
-        KBPK must be a single, double or triple DES key
-        Key block header must be at a minimum 16 characters long
-        Key block header length must be multiple of 8
-        Key must be a single, double or triple DES key
-        Key must not be longer than KBPK
-        Additional number of random pad bytes must be multiple of 8
-
-    Notes
-    -----
-    TR-31 version C is identical to version A with exception
-    of some of the key headers values that have been clarified.
-
-    Examples
-    --------
-    >>> import psec
-    >>> psec.tr31.wrap_c(
-    ...     kbpk = bytes.fromhex("11111111111111112222222222222222"),
-    ...     header = "A0072P0TE00E0000",
-    ...     key = bytes.fromhex("33333333333333334444444444444444"))  # doctest: +SKIP
-    'A0072P0TE00E0000C05F5CD188E4CA22D6E8B28C182E87F6907F4569CB3624C336A33E1E'
-    """
-
-    if len(kbpk) not in {8, 16, 24}:
-        raise ValueError("KBPK must be a single, double or triple DES key")
-
-    if len(header) < 16:
-        raise ValueError("Key block header must be at a minimum 16 characters long")
-
-    if len(header) % 8 != 0:
-        raise ValueError("Key block header length must be multiple of 8")
-
-    if len(key) not in {8, 16, 24}:
-        raise ValueError("Key must be a single, double or triple DES key")
-
-    if len(key) > len(kbpk):
-        raise ValueError("Key must not be longer than KBPK")
-
-    if extra_pad % 8 != 0:
-        raise ValueError(f"Extra pad must be multiple of 8: {str(extra_pad)}")
-
-    kbek, kbak = _c_derive(kbpk)
-    enc_key = _c_encrypt(kbek, header, key, extra_pad)
-    mac = _c_generate_mac(kbak, header, enc_key)
-    return header + enc_key.hex().upper() + mac.hex().upper()
-
-
-def _c_derive(kbpk: bytes) -> Tuple[bytes, bytes]:
-    """Derive Key Block Encryption and Authentication Keys"""
-    return (
-        _tools.xor(kbpk, b"\x45" * len(kbpk)),  # Key Block Encryption Key
-        _tools.xor(kbpk, b"\x4D" * len(kbpk)),  # Key Block Authentication Key
-    )
-
-
-def _c_encrypt(kbek: bytes, header: str, key: bytes, extra_pad: int) -> bytes:
-    """Encrypt key using KBEK"""
-    key_length = (len(key) * 8).to_bytes(2, "big")
-    random_data = _secrets.token_bytes(6 + extra_pad)
-    return _des.encrypt_tdes_cbc(
-        kbek, header.encode("ascii")[:8], key_length + key + random_data
-    )
-
-
-def _c_decrypt(kbek: bytes, header: str, enc_key: bytes) -> bytes:
-    """Decrypt key using KBEK. Return decrypted key."""
-    key_data = _des.decrypt_tdes_cbc(kbek, header.encode("ascii")[:8], enc_key)
-
-    key_length = int.from_bytes(key_data[0:2], "big")
-    if key_length < 64 or key_length % 64 != 0:
-        raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
-
-    key = key_data[2 : (key_length // 8) + 2]
-    if len(key) != key_length // 8:
-        raise ValueError(f"Decrypted key length is invalid: '{key.hex().upper()}'")
-
-    return key
-
-
-def _c_generate_mac(kbak: bytes, header: str, enc_key: bytes) -> bytes:
-    """Generate MAC using KBAK"""
-    return _mac.generate_cbc_mac(kbak, header.encode("ascii") + enc_key, 1, 4)
-
-
-class Header:
+class TR31Header:
     _mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
 
     _block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
@@ -544,23 +224,39 @@ class Header:
 
 
 class TR31KeyBlock:
-    def __init__(self, kbpk: bytes, header: Optional[Header] = None) -> None:
+    """
+    Parameters
+    ----------
+    kbpk : bytes
+        Key Block Protection Key.
+        The length of the KBPK must equal or greater
+        than the key to be protected.
+        Must be a valid DES key.
+    header : str
+        TR-31 key block header.
+        This function does not validate the contents
+        of the header. It will check that the header
+        fullfils minimum length requirement and
+        is multiple of 8 bytes.
+    """
+
+    def __init__(self, kbpk: bytes, header: Optional[TR31Header] = None) -> None:
         self.kbpk = kbpk
-        self.header = header or Header()
+        self.header = header or TR31Header()
 
     def wrap(self, key: bytes, extra_pad: int = 0) -> str:
-        """Generate TR-31 key block.
+        r"""Wrap key into a TR-31 key block.
 
         Parameters
         ----------
         key : bytes
             A key to be wrapped.
-            Must be a valid DES key for version A, B and C.
+            Must be a valid DES key for versions A, B and C.
             Must be a valid AES key for version D.
         extra_pad : int, optional
-            Add a number of extra bytes of random data to
-            the key to mask true key length.
-            Must be multiple of 8 for version A, B and C (DES).
+            Add extra bytes of random data to
+            the key to mask its true length.
+            Must be multiple of 8 for versions A, B and C (DES).
             Must be multiple of 16 for version D (AES).
             Default 0.
             For example, to make double DES key appear as
@@ -580,11 +276,10 @@ class TR31KeyBlock:
         Examples
         --------
         >>> import psec
-        >>> psec.tr31.wrap_b(
-        ...     kbpk = bytes.fromhex("11111111111111112222222222222222"),
-        ...     header = "B0080P0TE00E0000",
-        ...     key = bytes.fromhex("33333333333333334444444444444444"))  # doctest: +SKIP
-        'B0080P0TE00E0000809A8F0866A01A5A717900602BE435161A24128E75338A2B3AC48A831ABFCEE5'
+        >>> h = psec.tr31.TR31Header("B", "P0", "T","E","00","E")
+        >>> kb = psec.tr31.TR31KeyBlock(kbpk=b"\xFF" * 16, header=h)
+        >>> kb.wrap(key=b"\xEE" * 16)  # doctest: +SKIP
+        'B0080P0TE00E0000E30027FBC014F6B22182E2EA95E245D261CA45260DF616F7C8F203EC19BD1197'
         """
 
         if extra_pad % self.header.algorithm_block_size != 0:
@@ -602,6 +297,33 @@ class TR31KeyBlock:
         return wrap(self, self.header.dump(len(key), extra_pad), key, extra_pad)
 
     def unwrap(self, key_block: str) -> bytes:
+        r"""Unwrap key from a TR-31 key block.
+
+        Parameters
+        ----------
+        key_block : str
+            A TR-31 key block.
+
+        Returns
+        -------
+        key : bytes
+            Unwrapped key.
+            A DES key for versions A, B and C.
+            An AES key for version D.
+
+        Notes
+        -----
+        TR-31 version C is identical to version A with exception
+        of some of the key headers values that have been clarified.
+
+        Examples
+        --------
+        >>> import psec
+        >>> kb = psec.tr31.TR31KeyBlock(kbpk=b"\xFF" * 16)
+        >>> kb.unwrap("B0080P0TE00E0000E30027FBC014F6B22182E2EA95E245D261CA45260DF616F7C8F203EC19BD1197")
+        b'\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee'
+        """
+
         try:
             key_block_len = int(key_block[1:5])
         except ValueError:
@@ -615,7 +337,6 @@ class TR31KeyBlock:
 
         header_len = self.header.load(key_block)
         mac_len = self.header.mac_len
-        block_size = self.header.algorithm_block_size
         key_block_mac = key_block[header_len:][-mac_len * 2 :]
         key_block_key = key_block[header_len:][: -mac_len * 2]
 
@@ -632,6 +353,7 @@ class TR31KeyBlock:
         except ValueError:
             raise ValueError(f"Encrypted key is invalid: '{key_block_key}'")
 
+        block_size = self.header.algorithm_block_size
         if len(enc_key) < block_size or len(enc_key) % block_size != 0:
             raise ValueError(
                 f"Encrypted key length must be multiple of {str(block_size)}: '{key_block_key}'"
@@ -664,10 +386,19 @@ class TR31KeyBlock:
         if len(key) > len(self.kbpk):
             raise ValueError(f"Key must not be longer than KBPK: '{str(len(key))}'")
 
-        kbek, kbak = _b_derive(self.kbpk)
+        # Derive Key Block Encryption and Authentication Keys
+        kbek, kbak = self._b_derive()
+
+        # Format key data: 2 byte key length measure in bits + key + pad
         pad = _secrets.token_bytes(6 + extra_pad)
-        mac = _b_generate_mac(kbak, header, key, pad)
-        enc_key = _b_encrypt(kbek, key, mac, pad)
+        clear_key_data = (len(key) * 8).to_bytes(2, "big") + key + pad
+
+        # Generate MAC
+        mac = self._b_generate_mac(kbak, header, clear_key_data)
+
+        # Encrypt key data
+        enc_key = _des.encrypt_tdes_cbc(kbek, mac, clear_key_data)
+
         return header + enc_key.hex().upper() + mac.hex().upper()
 
     def _b_unwrap(self, header: str, enc_key: bytes, received_mac: bytes) -> bytes:
@@ -678,15 +409,76 @@ class TR31KeyBlock:
                 f"KBPK must be a double or triple DES key: '{str(len(self.kbpk))}'"
             )
 
-        kbek, kbak = _b_derive(self.kbpk)
-        key, pad = _b_decrypt(kbek, enc_key, received_mac)
-        mac = _b_generate_mac(kbak, header, key, pad)
+        # Derive Key Block Encryption and Authentication Keys
+        kbek, kbak = self._b_derive()
+
+        # Decrypt key data
+        clear_key_data = _des.decrypt_tdes_cbc(kbek, received_mac, enc_key)
+
+        # Validate MAC
+        mac = self._b_generate_mac(kbak, header, clear_key_data)
         if mac != received_mac:
             raise ValueError(
                 f"Key block MAC does not match generated MAC: '{mac.hex().upper()}'"
             )
 
+        # Extract key from key data: 2 byte key length measured in bits + key + pad
+        key_length = int.from_bytes(clear_key_data[0:2], "big")
+        if key_length < 8 or key_length % 8 != 0:
+            raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
+
+        key = clear_key_data[2 : (key_length // 8) + 2]
+        if len(key) != key_length // 8:
+            raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
+
         return key
+
+    def _b_derive(self) -> Tuple[bytes, bytes]:
+        """Derive Key Block Encryption and Authentication Keys"""
+        # byte 0 = a counter increment for each block of kbpk, start at 1
+        # byte 1-2 = key usage indicator
+        #   - 0000 = encryption
+        #   - 0001 = MAC
+        # byte 3 = separator, set to 0
+        # byte 4-5 = algorithm indicator
+        #   - 0000 = 2-Key TDES
+        #   - 0001 = 3-Key TDES
+        # byte 6-7 = key length in bits
+        #   - 0080 = 2-Key TDES
+        #   - 00C0 = 3-Key TDES
+        kd_input = bytearray(b"\x01\x00\x00\x00\x00\x00\x00\x80")
+
+        # Adjust for 3-key TDES
+        if len(self.kbpk) == 24:
+            kd_input[4:6] = b"\x00\x01"
+            kd_input[6:8] = b"\x00\xC0"
+
+        kbek = bytearray()  # encryption key
+        kbak = bytearray()  # authentication key
+
+        k1, _ = derive_tdes_cmac_subkey(self.kbpk)
+
+        for i in range(1, len(self.kbpk) // 8 + 1):
+            # Counter is incremented for each 8 byte block
+            kd_input[0] = i
+
+            # Encryption key
+            kd_input[1:3] = b"\x00\x00"
+            kbek += _mac.generate_cbc_mac(self.kbpk, _tools.xor(kd_input, k1), 1)
+
+            # Authentication key
+            kd_input[1:3] = b"\x00\x01"
+            kbak += _mac.generate_cbc_mac(self.kbpk, _tools.xor(kd_input, k1), 1)
+
+        return bytes(kbek), bytes(kbak)
+
+    def _b_generate_mac(self, kbak: bytes, header: str, key_data: bytes) -> bytes:
+        """Generate MAC using KBAK"""
+        km1, _ = derive_tdes_cmac_subkey(kbak)
+        mac_data = header.encode("ascii") + key_data
+        mac_data = mac_data[:-8] + _tools.xor(mac_data[-8:], km1)
+        mac = _mac.generate_cbc_mac(kbak, mac_data, 1)
+        return mac
 
     # Version A, C.
 
@@ -706,9 +498,21 @@ class TR31KeyBlock:
         if len(key) > len(self.kbpk):
             raise ValueError(f"Key must not be longer than KBPK: '{str(len(key))}'")
 
-        kbek, kbak = _c_derive(self.kbpk)
-        enc_key = _c_encrypt(kbek, header, key, extra_pad)
-        mac = _c_generate_mac(kbak, header, enc_key)
+        # Derive Key Block Encryption and Authentication Keys
+        kbek, kbak = self._c_derive()
+
+        # Format key data: 2 byte key length measure in bits + key + pad
+        pad = _secrets.token_bytes(6 + extra_pad)
+        clear_key_data = (len(key) * 8).to_bytes(2, "big") + key + pad
+
+        # Encrypt key data
+        enc_key = _des.encrypt_tdes_cbc(
+            kbek, header.encode("ascii")[:8], clear_key_data
+        )
+
+        # Generate MAC
+        mac = self._c_generate_mac(kbak, header, enc_key)
+
         return header + enc_key.hex().upper() + mac.hex().upper()
 
     def _c_unwrap(self, header: str, enc_key: bytes, received_mac: bytes) -> bytes:
@@ -719,15 +523,42 @@ class TR31KeyBlock:
                 f"KBPK must be a single, double or triple DES key: '{str(len(self.kbpk))}'"
             )
 
-        kbek, kbak = _c_derive(self.kbpk)
-        mac = _c_generate_mac(kbak, header, enc_key)
+        # Derive Key Block Encryption and Authentication Keys
+        kbek, kbak = self._c_derive()
+
+        # Validate MAC
+        mac = self._c_generate_mac(kbak, header, enc_key)
         if mac != received_mac:
             raise ValueError(
                 f"Key block MAC does not match generated MAC: '{mac.hex().upper()}'"
             )
-        key = _c_decrypt(kbek, header, enc_key)
+
+        # Decrypt key data
+        clear_key_data = _des.decrypt_tdes_cbc(
+            kbek, header.encode("ascii")[:8], enc_key
+        )
+
+        # Extract key from key data: 2 byte key length measured in bits + key + pad
+        key_length = int.from_bytes(clear_key_data[0:2], "big")
+        if key_length < 8 or key_length % 8 != 0:
+            raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
+
+        key = clear_key_data[2 : (key_length // 8) + 2]
+        if len(key) != key_length // 8:
+            raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
 
         return key
+
+    def _c_derive(self) -> Tuple[bytes, bytes]:
+        """Derive Key Block Encryption and Authentication Keys"""
+        return (
+            _tools.xor(self.kbpk, b"\x45" * len(self.kbpk)),  # Encryption Key
+            _tools.xor(self.kbpk, b"\x4D" * len(self.kbpk)),  # Authentication Key
+        )
+
+    def _c_generate_mac(self, kbak: bytes, header: str, enc_key: bytes) -> bytes:
+        """Generate MAC using KBAK"""
+        return _mac.generate_cbc_mac(kbak, header.encode("ascii") + enc_key, 1, 4)
 
     _wrap_dispatch: Dict[str, Callable[["TR31KeyBlock", str, bytes, int], str]] = {
         "A": _c_wrap,
