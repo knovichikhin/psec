@@ -1,5 +1,5 @@
 import secrets as _secrets
-from typing import Callable, Dict, Optional, Tuple
+import typing as _typing
 
 from psec import des as _des
 from psec import mac as _mac
@@ -8,10 +8,192 @@ from psec import tools as _tools
 __all__ = ["TR31KeyBlock", "TR31Header"]
 
 
+class Blocks(_typing.MutableMapping[str, str]):
+    def __init__(self) -> None:
+        self._blocks: _typing.Dict[str, str] = {}
+
+    def __len__(self) -> int:
+        return len(self._blocks)
+
+    def __getitem__(self, key: str) -> str:
+        if key in self._blocks:
+            return self._blocks[key]
+        raise KeyError(key)
+
+    def __setitem__(self, key: str, item: str) -> None:
+        if len(key) != 2 or not _tools.ascii_alphanumeric(key):
+            raise ValueError(f"Block ID '{key}' is invalid.")
+        if not _tools.ascii_printable(item):
+            raise ValueError(f"Block ID '{key}' item '{item}' is invalid.")
+        self._blocks[key] = item
+
+    def __delitem__(self, key: str) -> None:
+        del self._blocks[key]
+
+    def __iter__(self) -> _typing.Iterator[str]:
+        return iter(self._blocks)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._blocks
+
+    def __repr__(self) -> str:
+        return repr(self._blocks)
+
+    def __copy__(self) -> object:
+        inst = self.__class__.__new__(self.__class__)
+        inst.__dict__.update(self.__dict__)
+        # Create a copy and avoid triggering descriptors
+        inst.__dict__["_blocks"] = self.__dict__["_blocks"].copy()
+        return inst
+
+    def copy(self) -> "Blocks":
+        import copy
+
+        blocks = self._blocks
+        try:
+            self._blocks = {}
+            c = copy.copy(self)
+        finally:
+            self._blocks = blocks
+        c.update(self)
+        return c
+
+    def dump(self, algo_block_size: int) -> _typing.Tuple[int, str]:
+        """Load TR-31 header optional blocks from a string"""
+
+        blocks_list: _typing.List[str] = []
+        for block_id, block_data in self._blocks.items():
+            blocks_list.append(block_id)
+
+            # Simple length
+            if len(block_data) + 4 <= 255:
+                blocks_list.append(
+                    (len(block_data) + 4).to_bytes(1, "big").hex().upper()
+                )
+            elif len(block_data) + 10 > 65535:
+                raise ValueError(
+                    f"Optional block '{block_id}' length '{str(len(block_data))}' is too long."
+                )
+            else:
+                blocks_list.append("0002")
+                blocks_list.append(
+                    (len(block_data) + 10).to_bytes(2, "big").hex().upper()
+                )
+
+            blocks_list.append(block_data)
+
+        blocks = "".join(blocks_list)
+
+        # If total block data is not multiple of encryption algo block size
+        # then need to add a Pad Block.
+        if len(blocks) % algo_block_size != 0:
+            pad_num = algo_block_size - ((len(blocks) + 4) % algo_block_size)
+            pb_block = (
+                "PB" + (4 + pad_num).to_bytes(1, "big").hex().upper() + (pad_num * "0")
+            )
+            pb_block_count = 1
+        else:
+            pb_block = ""
+            pb_block_count = 0
+
+        if len(self._blocks) + pb_block_count > 99:
+            raise ValueError(
+                f"Number of optional blocks defined ({str(len(self._blocks) + pb_block_count)}) exceeds limit of 99."
+            )
+
+        return len(self._blocks) + pb_block_count, blocks + pb_block
+
+    def load(self, blocks_num: int, blocks: str) -> int:
+        """Load TR-31 header optional blocks from a string"""
+
+        def parse_extended_block_len(
+            block_id: str, blocks: str, i: int
+        ) -> _typing.Tuple[int, int]:
+            # Extract length of length.
+            # E.g. if block length is 0190 then this field is 02.
+            try:
+                block_len_len = (
+                    int.from_bytes(bytes.fromhex(blocks[i : i + 2]), "big") * 2
+                )
+            except:
+                raise ValueError(
+                    f"Optional block '{block_id}' length of length '{blocks[i : i + 2]}' is malformed ."
+                )
+
+            if block_len_len == 0:
+                raise ValueError(
+                    f"Optional block '{block_id}' length of length '{blocks[i : i + 2]}' is invalid."
+                )
+
+            i += 2
+
+            # Extract actual block length
+            block_len_s = blocks[i : i + block_len_len]
+            if len(block_len_s) != block_len_len:
+                raise ValueError(
+                    f"Optional block '{block_id}' length '{block_len_s}' is malformed."
+                )
+
+            try:
+                block_len = int(block_len_s, 16)
+            except:
+                raise ValueError(
+                    f"Optional block '{block_id}' length '{block_len_s}' is malformed."
+                )
+            i += block_len_len
+
+            # Block length includes ID, 00 length indicator, lenght of length and actual length in it.
+            # Remove that to return block data length.
+            return (block_len - 6 - block_len_len), i
+
+        # Remove any existing blocks before loading new ones
+        self._blocks.clear()
+
+        i = 0
+        for _ in range(0, blocks_num):
+            block_id = blocks[i : i + 2]
+            if len(block_id) != 2:
+                raise ValueError(f"Optional block ID '{block_id}' is malformed.")
+            i += 2
+
+            try:
+                block_len = int.from_bytes(bytes.fromhex(blocks[i : i + 2]), "big")
+            except:
+                raise ValueError(
+                    f"Optional block '{block_id}' length '{blocks[i : i + 2]}' is malformed."
+                )
+            i += 2
+
+            if block_len == 0:
+                block_len, i = parse_extended_block_len(block_id, blocks, i)
+            else:
+                # Exclude block ID and block length to get block data length
+                block_len -= 4
+
+            if block_len < 0:
+                raise ValueError(
+                    f"Optional block '{block_id}' length does not account for data."
+                )
+
+            block_data = blocks[i : i + block_len]
+            if len(block_data) != block_len:
+                raise ValueError(
+                    f"Optional block '{block_id}' data '{block_data}' is malformed."
+                )
+            i += block_len
+
+            # Do not add Pad Block. It's there to make optional headers
+            # multiple of encryption block size. It does not cary any data.
+            if block_id.upper() != "PB":
+                self._blocks[block_id] = block_data
+
+        return i
+
+
 class TR31Header:
-    _mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
-    _block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
-    _valid_key_sizes = {
+    _algo_mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
+    _algo_block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
+    _algo_key_sizes = {
         "A": frozenset([8, 16, 24]),
         "B": frozenset([8, 16, 24]),
         "C": frozenset([8, 16, 24]),
@@ -25,8 +207,7 @@ class TR31Header:
         algorithm: str = "0",
         mode_of_use: str = "0",
         version_num: str = "00",
-        exportability: str = "0",
-        reserved: str = "00",
+        exportability: str = "N",
     ) -> None:
         self.version_id = version_id
         self.key_usage = key_usage
@@ -34,7 +215,23 @@ class TR31Header:
         self.mode_of_use = mode_of_use
         self.version_num = version_num
         self.exportability = exportability
-        self.reserved = reserved
+        self._reserved = "00"
+        self.blocks = Blocks()
+
+    def __str__(self) -> str:
+        blocks_num, blocks = self.blocks.dump(self._algo_block_size[self.version_id])
+        return (
+            self.version_id
+            + str(16 + len(blocks)).zfill(4)
+            + self.key_usage
+            + self.algorithm
+            + self.mode_of_use
+            + self.version_num
+            + self.exportability
+            + str(blocks_num).zfill(2)
+            + self.reserved
+            + blocks
+        )
 
     @property
     def version_id(self) -> str:
@@ -100,34 +297,33 @@ class TR31Header:
     def reserved(self) -> str:
         return self._reserved
 
-    @reserved.setter
-    def reserved(self, reserved: str) -> None:
-        if len(reserved) != 2 or not _tools.ascii_alphanumeric(reserved):
-            raise ValueError(f"Reserved field is invalid: '{reserved}'")
-        self._reserved = reserved
-
     def dump(self, key_len: int) -> str:
-        """Format TR-31 header into string"""
+        """Format TR-31 header into a key block string"""
 
-        if key_len not in self._valid_key_sizes[self.version_id]:
-            valid_sizes = ", ".join(map(str, self._valid_key_sizes[self.version_id]))
+        if key_len not in self._algo_key_sizes[self.version_id]:
+            valid_sizes = ", ".join(map(str, self._algo_key_sizes[self.version_id]))
             raise ValueError(
-                f"Key length '{str(key_len)}' must be {valid_sizes} bytes for key block version {self.version_id}"
+                f"Key length '{str(key_len)}' must be {valid_sizes} bytes for key block version {self.version_id}."
             )
 
-        block_size = self._block_size[self.version_id]
-        pad_len = block_size - ((2 + key_len) % block_size)
+        algo_block_size = self._algo_block_size[self.version_id]
+        pad_len = algo_block_size - ((2 + key_len) % algo_block_size)
+
+        blocks_num, blocks = self.blocks.dump(algo_block_size)
 
         block_len = (
             16  # mandatory header
             + 4  # key length's length in ASCII
             + (key_len * 2)
             + (pad_len * 2)
-            + (self._mac_len[self.version_id] * 2)
+            + (self._algo_mac_len[self.version_id] * 2)
+            + len(blocks)
         )
 
         if block_len > 9992:
-            ValueError(f"Key block length '{str(block_len)}' exceeds maximum of 9992.")
+            ValueError(
+                f"Total key block length ({str(block_len)}) exceeds limit of 9992."
+            )
 
         return (
             self.version_id
@@ -137,12 +333,13 @@ class TR31Header:
             + self.mode_of_use
             + self.version_num
             + self.exportability
-            + "00"  # Number of optional blocks
+            + str(blocks_num).zfill(2)
             + self.reserved
+            + blocks
         )
 
     def load(self, key_block: str) -> int:
-        """Load TR-31 header from key block string"""
+        """Load TR-31 header from a key block string"""
 
         if not _tools.ascii_alphanumeric(key_block[:16]):
             raise ValueError(f"Header must be ASCII alphanumeric: '{key_block[:16]}'")
@@ -153,7 +350,9 @@ class TR31Header:
             )
 
         if len(key_block) < 16:
-            raise ValueError(f"Header length '{str(len(key_block))}' must be at a minimum 16 characters long.")
+            raise ValueError(
+                f"Header length '{str(len(key_block))}' must be at a minimum 16 characters long."
+            )
 
         self.version_id = key_block[0]
         self.key_usage = key_block[5:7]
@@ -161,9 +360,15 @@ class TR31Header:
         self.mode_of_use = key_block[8]
         self.version_num = key_block[9:11]
         self.exportability = key_block[11]
-        self.reserved = key_block[14:16]
+        self._reserved = key_block[14:16]
 
-        return 16
+        try:
+            blocks_num = int(key_block[12:14])
+        except:
+            ValueError(f"Number of optional blocks '{key_block[12:14]}' is not valid.")
+        optional_blocks_len = self.blocks.load(blocks_num, key_block[16:])
+
+        return 16 + optional_blocks_len
 
 
 class TR31KeyBlock:
@@ -183,16 +388,18 @@ class TR31KeyBlock:
         is multiple of 8 bytes.
     """
 
-    _mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
-    _block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
-    _max_key_len = {"A": 24, "B": 24, "C": 24, "D": 32}
+    _algo_mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
+    _algo_block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
+    _algo_max_key_len = {"A": 24, "B": 24, "C": 24, "D": 32}
 
-    def __init__(self, kbpk: bytes, header: Optional[TR31Header] = None) -> None:
+    def __init__(
+        self, kbpk: bytes, header: _typing.Optional[TR31Header] = None
+    ) -> None:
         self.kbpk = kbpk
         self.header = header or TR31Header()
 
-    def wrap(self, key: bytes, masked_key_len: Optional[int] = None) -> str:
-        r"""Wrap key into a TR-31 key block.
+    def wrap(self, key: bytes, masked_key_len: _typing.Optional[int] = None) -> str:
+        r"""Wrap key into a TR-31 key block version A, B or C.
 
         Parameters
         ----------
@@ -246,7 +453,9 @@ class TR31KeyBlock:
             )
 
         if masked_key_len is None:
-            masked_key_len = max(self._max_key_len[self.header.version_id], len(key))
+            masked_key_len = max(
+                self._algo_max_key_len[self.header.version_id], len(key)
+            )
         else:
             masked_key_len = max(masked_key_len, len(key))
 
@@ -258,7 +467,7 @@ class TR31KeyBlock:
         )
 
     def unwrap(self, key_block: str) -> bytes:
-        r"""Unwrap key from a TR-31 key block.
+        r"""Unwrap key from a TR-31 key block version A, B or C.
 
         Parameters
         ----------
@@ -309,27 +518,27 @@ class TR31KeyBlock:
             )
 
         header_len = self.header.load(key_block)
-        mac_len = self._mac_len[self.header.version_id]
-        key_block_mac = key_block[header_len:][-mac_len * 2 :]
-        key_block_key = key_block[header_len:][: -mac_len * 2]
+        algo_mac_len = self._algo_mac_len[self.header.version_id]
+        key_block_mac = key_block[header_len:][-algo_mac_len * 2 :]
+        key_block_key = key_block[header_len:][: -algo_mac_len * 2]
 
         try:
             received_mac = bytes.fromhex(key_block_mac)
         except ValueError:
-            raise ValueError(f"Key block MAC is invalid: '{key_block_mac}'")
+            raise ValueError(f"Key block MAC '{key_block_mac}' is invalid.")
 
-        if len(received_mac) != mac_len:
-            raise ValueError(f"Key block MAC is invalid: '{key_block_mac}'")
+        if len(received_mac) != algo_mac_len:
+            raise ValueError(f"Key block MAC '{key_block_mac}' is invalid.")
 
         try:
             enc_key = bytes.fromhex(key_block_key)
         except ValueError:
-            raise ValueError(f"Encrypted key is invalid: '{key_block_key}'")
+            raise ValueError(f"Encrypted key '{key_block_key}' is invalid.")
 
-        block_size = self._block_size[self.header.version_id]
-        if len(enc_key) < block_size or len(enc_key) % block_size != 0:
+        algo_block_size = self._algo_block_size[self.header.version_id]
+        if len(enc_key) < algo_block_size or len(enc_key) % algo_block_size != 0:
             raise ValueError(
-                f"Encrypted key length must be multiple of {str(block_size)}: '{key_block_key}'"
+                f"Encrypted key length must be multiple of {str(algo_block_size)}: '{key_block_key}'"
             )
 
         try:
@@ -392,21 +601,25 @@ class TR31KeyBlock:
         mac = self._b_generate_mac(kbak, header, clear_key_data)
         if mac != received_mac:
             raise ValueError(
-                f"Key block MAC does not match generated MAC: '{mac.hex().upper()}'"
+                f"Key block MAC '{received_mac.hex().upper()}' does not match generated MAC '{mac.hex().upper()}'."
             )
 
         # Extract key from key data: 2 byte key length measured in bits + key + pad
-        key_length = int.from_bytes(clear_key_data[0:2], "big")
-        if key_length < 8 or key_length % 8 != 0:
-            raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
+        key_length = int.from_bytes(clear_key_data[0:2], "big") // 8
+        if key_length not in {8, 16, 24}:
+            raise ValueError(
+                f"Decrypted key length '{str(key_length)}' is invalid. Must be 8, 16, 24."
+            )
 
-        key = clear_key_data[2 : (key_length // 8) + 2]
-        if len(key) != key_length // 8:
-            raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
+        key = clear_key_data[2 : key_length + 2]
+        if len(key) != key_length:
+            raise ValueError(
+                f"Decrypted key is malformed. Key length '{str(len(key))}' does not match encoded key length '{str(key_length)}'."
+            )
 
         return key
 
-    def _b_derive(self) -> Tuple[bytes, bytes]:
+    def _b_derive(self) -> _typing.Tuple[bytes, bytes]:
         """Derive Key Block Encryption and Authentication Keys"""
         # byte 0 = a counter increment for each block of kbpk, start at 1
         # byte 1-2 = key usage indicator
@@ -453,7 +666,7 @@ class TR31KeyBlock:
         mac = _mac.generate_cbc_mac(kbak, mac_data, 1)
         return mac
 
-    def _derive_des_cmac_subkey(self, key: bytes) -> Tuple[bytes, bytes]:
+    def _derive_des_cmac_subkey(self, key: bytes) -> _typing.Tuple[bytes, bytes]:
         """Derive two subkeys from a DES key. Each subkey is 8 bytes."""
 
         def shift_left_1(in_bytes: bytes) -> bytes:
@@ -529,7 +742,7 @@ class TR31KeyBlock:
         mac = self._c_generate_mac(kbak, header, enc_key)
         if mac != received_mac:
             raise ValueError(
-                f"Key block MAC does not match generated MAC: '{mac.hex().upper()}'"
+                f"Key block MAC '{received_mac.hex().upper()}' does not match generated MAC '{mac.hex().upper()}'."
             )
 
         # Decrypt key data
@@ -538,17 +751,21 @@ class TR31KeyBlock:
         )
 
         # Extract key from key data: 2 byte key length measured in bits + key + pad
-        key_length = int.from_bytes(clear_key_data[0:2], "big")
-        if key_length < 8 or key_length % 8 != 0:
-            raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
+        key_length = int.from_bytes(clear_key_data[0:2], "big") // 8
+        if key_length not in {8, 16, 24}:
+            raise ValueError(
+                f"Decrypted key length '{str(key_length)}' is invalid. Must be 8, 16, 24."
+            )
 
-        key = clear_key_data[2 : (key_length // 8) + 2]
-        if len(key) != key_length // 8:
-            raise ValueError(f"Decrypted key length is invalid: '{str(key_length)}'")
+        key = clear_key_data[2 : key_length + 2]
+        if len(key) != key_length:
+            raise ValueError(
+                f"Decrypted key is malformed. Key length '{str(len(key))}' does not match encoded key length '{str(key_length)}'."
+            )
 
         return key
 
-    def _c_derive(self) -> Tuple[bytes, bytes]:
+    def _c_derive(self) -> _typing.Tuple[bytes, bytes]:
         """Derive Key Block Encryption and Authentication Keys"""
         return (
             _tools.xor(self.kbpk, b"\x45" * len(self.kbpk)),  # Encryption Key
@@ -559,14 +776,16 @@ class TR31KeyBlock:
         """Generate MAC using KBAK"""
         return _mac.generate_cbc_mac(kbak, header.encode("ascii") + enc_key, 1, 4)
 
-    _wrap_dispatch: Dict[str, Callable[["TR31KeyBlock", str, bytes, int], str]] = {
+    _wrap_dispatch: _typing.Dict[
+        str, _typing.Callable[["TR31KeyBlock", str, bytes, int], str]
+    ] = {
         "A": _c_wrap,
         "B": _b_wrap,
         "C": _c_wrap,
     }
 
-    _unwrap_dispatch: Dict[
-        str, Callable[["TR31KeyBlock", str, bytes, bytes], bytes]
+    _unwrap_dispatch: _typing.Dict[
+        str, _typing.Callable[["TR31KeyBlock", str, bytes, bytes], bytes]
     ] = {
         "A": _c_unwrap,
         "B": _b_unwrap,
