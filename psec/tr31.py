@@ -5,7 +5,19 @@ from psec import des as _des
 from psec import mac as _mac
 from psec import tools as _tools
 
-__all__ = ["TR31KeyBlock", "TR31Header"]
+__all__ = ["KeyBlock", "Header", "HeaderError", "KeyBlockError"]
+
+
+class HeaderError(ValueError):
+    """Subclass of ValueError that indicates error in processing TR-31 header data."""
+
+    pass
+
+
+class KeyBlockError(ValueError):
+    """Subclass of ValueError that indicates error in processing TR-31 key block data."""
+
+    pass
 
 
 class Blocks(_typing.MutableMapping[str, str]):
@@ -22,9 +34,14 @@ class Blocks(_typing.MutableMapping[str, str]):
 
     def __setitem__(self, key: str, item: str) -> None:
         if len(key) != 2 or not _tools.ascii_alphanumeric(key):
-            raise ValueError(f"Block ID '{key}' is invalid.")
+            raise HeaderError(
+                f"Block ID ({key}) is invalid. Expecting 2 alphanumeric characters."
+            )
         if not _tools.ascii_printable(item):
-            raise ValueError(f"Block ID '{key}' item '{item}' is invalid.")
+            raise HeaderError(
+                f"Block {key} data is invalid. Expecting ASCII printable characters. "
+                f"Data: '{item}'"
+            )
         self._blocks[key] = item
 
     def __delitem__(self, key: str) -> None:
@@ -59,26 +76,51 @@ class Blocks(_typing.MutableMapping[str, str]):
         return c
 
     def dump(self, algo_block_size: int) -> _typing.Tuple[int, str]:
-        """Load TR-31 header optional blocks from a string"""
+        """Format TR-31 header optional blocks into a string.
+
+        Parameters
+        ----------
+        algo_block_size : int
+            TR-31 algorithm block size. 8 for TDES and 16 for AES.
+            Required because produced block data must be multiple of
+            algorithm encryption block size.
+
+        Returns
+        -------
+        blocks_num : int
+            Number of blocks included in the produced string.
+        blocks : str
+            String that contains TR-31 header optional blocks.
+
+        Raises
+        ------
+        HeaderError
+        """
 
         blocks_list: _typing.List[str] = []
-        for block_id, block_data in self._blocks.items():
+        for block_id, block_data in self.items():
             blocks_list.append(block_id)
 
-            # Simple length
+            # Length is encoded in a single hexchar pair for <=255 fields.
+            # +4 is to include block ID and length itself into the length.
             if len(block_data) + 4 <= 255:
                 blocks_list.append(
                     (len(block_data) + 4).to_bytes(1, "big").hex().upper()
                 )
-            elif len(block_data) + 10 > 65535:
-                raise ValueError(
-                    f"Optional block '{block_id}' length '{str(len(block_data))}' is too long."
-                )
             else:
+                # For fields longer than 255 construct an extended length
+                # that consits of length of length and only then actual length.
+                # +10 is to include block ID, extended length indicator (00),
+                # length of length (02) and length itself (e.g. 0FFF).
                 blocks_list.append("0002")
-                blocks_list.append(
-                    (len(block_data) + 10).to_bytes(2, "big").hex().upper()
-                )
+                try:
+                    blocks_list.append(
+                        (len(block_data) + 10).to_bytes(2, "big").hex().upper()
+                    )
+                except OverflowError:
+                    raise HeaderError(
+                        f"Block {block_id} length ({str(len(block_data))}) is too long."
+                    )
 
             blocks_list.append(block_data)
 
@@ -96,101 +138,186 @@ class Blocks(_typing.MutableMapping[str, str]):
             pb_block = ""
             pb_block_count = 0
 
-        if len(self._blocks) + pb_block_count > 99:
-            raise ValueError(
-                f"Number of optional blocks defined ({str(len(self._blocks) + pb_block_count)}) exceeds limit of 99."
+        if len(self) + pb_block_count > 99:
+            raise HeaderError(
+                f"Number of optional blocks ({str(len(self) + pb_block_count)}) "
+                f"exceeds limit of 99."
             )
 
-        return len(self._blocks) + pb_block_count, blocks + pb_block
+        return len(self) + pb_block_count, blocks + pb_block
 
     def load(self, blocks_num: int, blocks: str) -> int:
-        """Load TR-31 header optional blocks from a string"""
+        """Load TR-31 header optional blocks from a string.
 
-        def parse_extended_block_len(
+        Parameters
+        ----------
+        blocks_num : int
+            Number of expected optional blocks within the supplied string.
+        blocks : str
+            String that contains TR-31 header optional blocks.
+
+        Returns
+        -------
+        blocks_len : int
+            Length of parsed optional blocks data within supplied input string.
+
+        Raises
+        ------
+        HeaderError
+
+        Notes
+        -----
+        This method clears all current optional blocks before loading new ones.
+        """
+
+        def parse_extended_len(
             block_id: str, blocks: str, i: int
         ) -> _typing.Tuple[int, int]:
-            # Extract length of length.
-            # E.g. if block length is 0190 then this field is 02.
-            try:
-                block_len_len = (
-                    int.from_bytes(bytes.fromhex(blocks[i : i + 2]), "big") * 2
+            # Get 2 character long optional block length of length.
+            # E.g. if a block's length is 0190 then this field is set to 02
+            # to indicate that the length consists of 2 hexchar pairs.
+            block_len_len_s = blocks[i : i + 2]
+            if len(block_len_len_s) != 2 or not _tools.ascii_hexchar(block_len_len_s):
+                raise HeaderError(
+                    f"Block {block_id} length of length ({block_len_len_s}) is malformed. "
+                    f"Expecting 2 hexchars."
                 )
-            except:
-                raise ValueError(
-                    f"Optional block '{block_id}' length of length '{blocks[i : i + 2]}' is malformed ."
-                )
-
-            if block_len_len == 0:
-                raise ValueError(
-                    f"Optional block '{block_id}' length of length '{blocks[i : i + 2]}' is invalid."
-                )
-
             i += 2
+
+            block_len_len = int(block_len_len_s, 16) * 2
+            if block_len_len == 0:
+                raise HeaderError(f"Block {block_id} length of length must not be 0.")
 
             # Extract actual block length
             block_len_s = blocks[i : i + block_len_len]
-            if len(block_len_s) != block_len_len:
-                raise ValueError(
-                    f"Optional block '{block_id}' length '{block_len_s}' is malformed."
+            if len(block_len_s) != block_len_len or not _tools.ascii_hexchar(
+                block_len_s
+            ):
+                raise HeaderError(
+                    f"Block {block_id} length ({block_len_s}) is malformed. "
+                    f"Expecting {str(block_len_len)} hexchars."
                 )
 
-            try:
-                block_len = int(block_len_s, 16)
-            except:
-                raise ValueError(
-                    f"Optional block '{block_id}' length '{block_len_s}' is malformed."
-                )
-            i += block_len_len
-
-            # Block length includes ID, 00 length indicator, lenght of length and actual length in it.
+            # Block length includes ID, 00 length indicator,
+            # lenght of length and actual length in it.
             # Remove that to return block data length.
-            return (block_len - 6 - block_len_len), i
+            block_len = int(block_len_s, 16)
+            return (block_len - 6 - block_len_len), i + block_len_len
 
         # Remove any existing blocks before loading new ones
-        self._blocks.clear()
+        self.clear()
 
         i = 0
         for _ in range(0, blocks_num):
+            # Get 2 character long optional block ID
             block_id = blocks[i : i + 2]
             if len(block_id) != 2:
-                raise ValueError(f"Optional block ID '{block_id}' is malformed.")
+                raise HeaderError(f"Block ID ({block_id}) is malformed.")
             i += 2
 
-            try:
-                block_len = int.from_bytes(bytes.fromhex(blocks[i : i + 2]), "big")
-            except:
-                raise ValueError(
-                    f"Optional block '{block_id}' length '{blocks[i : i + 2]}' is malformed."
+            # Get 2 character long optional block length.
+            block_len_s = blocks[i : i + 2]
+            if len(block_len_s) != 2 or not _tools.ascii_hexchar(block_len_s):
+                raise HeaderError(
+                    f"Block {block_id} length ({block_len_s}) is malformed. "
+                    f"Expecting 2 hexchars."
                 )
             i += 2
 
+            # If the length is 00 then block length consists of multiple bytes.
+            # Otherwise, the first length byte is the length.
+            block_len = int(block_len_s, 16)
             if block_len == 0:
-                block_len, i = parse_extended_block_len(block_id, blocks, i)
+                block_len, i = parse_extended_len(block_id, blocks, i)
             else:
                 # Exclude block ID and block length to get block data length
                 block_len -= 4
 
             if block_len < 0:
-                raise ValueError(
-                    f"Optional block '{block_id}' length does not account for data."
+                raise HeaderError(
+                    f"Block {block_id} length does not include block ID and length."
                 )
 
             block_data = blocks[i : i + block_len]
             if len(block_data) != block_len:
-                raise ValueError(
-                    f"Optional block '{block_id}' data '{block_data}' is malformed."
+                raise HeaderError(
+                    f"Block {block_id} data is malformed. "
+                    f"Received {str(len(block_data))}/{str(block_len)}. "
+                    f"Block data: '{block_data}'"
                 )
             i += block_len
 
-            # Do not add Pad Block. It's there to make optional headers
+            # Do not add Pad Block. It's there to make optional blocks
             # multiple of encryption block size. It does not cary any data.
             if block_id.upper() != "PB":
-                self._blocks[block_id] = block_data
+                self[block_id] = block_data
 
         return i
 
 
-class TR31Header:
+class Header:
+    """TR-31 header.
+
+    Parameters
+    ----------
+    version_id : str
+        Identifies the version of the key block, which defines the method
+        by which it is cryptographically protected and the content and
+        layout of the block:
+            - A - TDES variant. Deprecated and should not be used for new applications.
+            - B - TDES key derivation. Preferred TDES implementation.
+            - C - TDES variant. Same as A.
+            - D - AES key derivation
+
+    key_usage : str
+        Provides information about the intended function of the protected
+        key/sensitive data. For example, caculating MAC.
+    algorithm: str
+        The approved algorithm for which the protected key may be used.
+    mode_of_use: str
+        Defines the operation the protected key can perform. For example,
+        a MAC key may be limited to verification only.
+    version_num: str
+        Two-digit ASCII character version number, optionally used to
+        indicate that contents of the key block is a component,
+        or to prevent re-injection of old keys.
+        Not to be confused with version ID.
+    exportability: str
+        Defines whether the protected key may be transferred outside
+        the cryptographic domain in which the key is found.
+
+    Attributes
+    ----------
+    version_id : str
+        Identifies the version of the key block, which defines the method
+        by which it is cryptographically protected and the content and
+        layout of the block:
+            - A = TDES variant. Deprecated and should not be used for new applications.
+            - B = TDES key derivation. Preferred TDES implementation.
+            - C = TDES variant. Same as A.
+            - D = AES key derivation
+
+    key_usage : str
+        Provides information about the intended function of the protected
+        key/sensitive data. For example, caculating MAC.
+    algorithm: str
+        The approved algorithm for which the protected key may be used.
+    mode_of_use: str
+        Defines the operation the protected key can perform. For example,
+        a MAC key may be limited to verification only.
+    version_num: str
+        Two-digit ASCII character version number, optionally used to
+        indicate that contents of the key block is a component,
+        or to prevent re-injection of old keys.
+        Not to be confused with version ID.
+    exportability: str
+        Defines whether the protected key may be transferred outside
+        the cryptographic domain in which the key is found.
+    blocks : Blocks
+        A dictionary of optional blocks that contain additional
+        information about the key block.
+    """
+
     _algo_mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
     _algo_block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
     _algo_key_sizes = {
@@ -235,75 +362,113 @@ class TR31Header:
 
     @property
     def version_id(self) -> str:
+        """Identifies the version of the key block, which defines the method
+        by which it is cryptographically protected and the content and
+        layout of the block.
+        """
         return self._version_id
 
     @version_id.setter
     def version_id(self, version_id: str) -> None:
         if version_id not in {"A", "B", "C", "D"}:
-            raise ValueError(f"Version ID is not supported: '{version_id}'")
+            raise HeaderError(f"Version ID is not supported: '{version_id}'")
         self._version_id = version_id
 
     @property
     def key_usage(self) -> str:
+        """Provides information about the intended function of the protected
+        key/sensitive data. For example, caculating MAC.
+        """
         return self._key_usage
 
     @key_usage.setter
     def key_usage(self, key_usage: str) -> None:
         if len(key_usage) != 2 or not _tools.ascii_alphanumeric(key_usage):
-            raise ValueError(f"Key Usage is invalid: '{key_usage}'")
+            raise HeaderError(f"Key Usage is invalid: '{key_usage}'")
         self._key_usage = key_usage
 
     @property
     def algorithm(self) -> str:
+        """The approved algorithm for which the protected key may be used."""
         return self._algorithm
 
     @algorithm.setter
     def algorithm(self, algorithm: str) -> None:
         if len(algorithm) != 1 or not _tools.ascii_alphanumeric(algorithm):
-            raise ValueError(f"Algorithm is invalid: '{algorithm}'")
+            raise HeaderError(f"Algorithm is invalid: '{algorithm}'")
         self._algorithm = algorithm
 
     @property
     def mode_of_use(self) -> str:
+        """Defines the operation the protected key can perform. For example,
+        a MAC key may be limited to verification only.
+        """
         return self._mode_of_use
 
     @mode_of_use.setter
     def mode_of_use(self, mode_of_use: str) -> None:
         if len(mode_of_use) != 1 or not _tools.ascii_alphanumeric(mode_of_use):
-            raise ValueError(f"Mode of use is invalid: '{mode_of_use}'")
+            raise HeaderError(f"Mode of use is invalid: '{mode_of_use}'")
         self._mode_of_use = mode_of_use
 
     @property
     def version_num(self) -> str:
+        """Two-digit ASCII character version number, optionally used to
+        indicate that contents of the key block is a component,
+        or to prevent re-injection of old keys.
+        Not to be confused with version ID.
+        """
         return self._version_num
 
     @version_num.setter
     def version_num(self, version_num: str) -> None:
         if len(version_num) != 2 or not _tools.ascii_alphanumeric(version_num):
-            raise ValueError(f"Version number is invalid: '{version_num}'")
+            raise HeaderError(f"Version number is invalid: '{version_num}'")
         self._version_num = version_num
 
     @property
     def exportability(self) -> str:
+        """Defines whether the protected key may be transferred outside
+        the cryptographic domain in which the key is found.
+        """
         return self._exportability
 
     @exportability.setter
     def exportability(self, exportability: str) -> None:
         if len(exportability) != 1 or not _tools.ascii_alphanumeric(exportability):
-            raise ValueError(f"Exportability is invalid: '{exportability}'")
+            raise HeaderError(f"Exportability is invalid: '{exportability}'")
         self._exportability = exportability
 
     @property
     def reserved(self) -> str:
+        """This field is reserved for future use.
+        It should be filled with zeroes.
+        """
         return self._reserved
 
     def dump(self, key_len: int) -> str:
-        """Format TR-31 header into a key block string"""
+        """Format TR-31 header into a key block string
+
+        Parameters
+        ----------
+        key_len : int
+            Length of key to be wrapped into this key block.
+            Key length is required to determine correct key block length.
+
+        Returns
+        -------
+        header : str
+            String that contains TR-31 header.
+
+        Raises
+        ------
+        HeaderError
+        """
 
         if key_len not in self._algo_key_sizes[self.version_id]:
             valid_sizes = ", ".join(map(str, self._algo_key_sizes[self.version_id]))
-            raise ValueError(
-                f"Key length '{str(key_len)}' must be {valid_sizes} bytes for key block version {self.version_id}."
+            raise HeaderError(
+                f"key_len ({str(key_len)}) must be {valid_sizes} for key block version {self.version_id}."
             )
 
         algo_block_size = self._algo_block_size[self.version_id]
@@ -311,7 +476,7 @@ class TR31Header:
 
         blocks_num, blocks = self.blocks.dump(algo_block_size)
 
-        block_len = (
+        kb_len = (
             16  # mandatory header
             + 4  # key length's length in ASCII
             + (key_len * 2)
@@ -320,14 +485,14 @@ class TR31Header:
             + len(blocks)
         )
 
-        if block_len > 9992:
-            ValueError(
-                f"Total key block length ({str(block_len)}) exceeds limit of 9992."
+        if kb_len > 9992:
+            HeaderError(
+                f"Total key block length ({str(kb_len)}) exceeds limit of 9992."
             )
 
         return (
             self.version_id
-            + str(block_len).zfill(4)
+            + str(kb_len).zfill(4)
             + self.key_usage
             + self.algorithm
             + self.mode_of_use
@@ -338,54 +503,88 @@ class TR31Header:
             + blocks
         )
 
-    def load(self, key_block: str) -> int:
-        """Load TR-31 header from a key block string"""
+    def load(self, header: str) -> int:
+        """Load TR-31 header from a string
 
-        if not _tools.ascii_alphanumeric(key_block[:16]):
-            raise ValueError(f"Header must be ASCII alphanumeric: '{key_block[:16]}'")
+        Parameters
+        ----------
+        header : str
+            String that contains TR-31 header information.
+            Could also be a complete or incomplete TR-31 key block.
 
-        if len(key_block) % 8 != 0:
-            raise ValueError(
-                f"Key block length '{str(len(key_block))}' must be multiple of 8."
+        Returns
+        -------
+        header_len : int
+            Length of parsed header data within supplied input string.
+
+        Raises
+        ------
+        HeaderError
+
+        Notes
+        -----
+        This method overrides all values of the header and
+        clears all prior optional blocks before loading new ones.
+        """
+
+        if not _tools.ascii_alphanumeric(header[:16]):
+            raise HeaderError(f"Header must be ASCII alphanumeric. Header: '{header[:16]}'")
+
+        # TODO: experiment without this. Let keyblock verify this
+        # if len(header) % 8 != 0:
+        #    raise HeaderError(
+        #        f"Header length ({str(len(header))}) must be multiple of 8."
+        #    )
+
+        if len(header) < 16:
+            raise HeaderError(
+                f"Header length ({str(len(header))}) must be >=16 to include a complete header."
             )
 
-        if len(key_block) < 16:
-            raise ValueError(
-                f"Header length '{str(len(key_block))}' must be at a minimum 16 characters long."
-            )
+        self.version_id = header[0]
+        self.key_usage = header[5:7]
+        self.algorithm = header[7]
+        self.mode_of_use = header[8]
+        self.version_num = header[9:11]
+        self.exportability = header[11]
+        self._reserved = header[14:16]
 
-        self.version_id = key_block[0]
-        self.key_usage = key_block[5:7]
-        self.algorithm = key_block[7]
-        self.mode_of_use = key_block[8]
-        self.version_num = key_block[9:11]
-        self.exportability = key_block[11]
-        self._reserved = key_block[14:16]
+        if not _tools.ascii_numeric(header[12:14]):
+            HeaderError(f"Number of optional blocks ({header[12:14]}) is invalid. Expecting 2 digits.")
 
-        try:
-            blocks_num = int(key_block[12:14])
-        except:
-            ValueError(f"Number of optional blocks '{key_block[12:14]}' is not valid.")
-        optional_blocks_len = self.blocks.load(blocks_num, key_block[16:])
+        blocks_num = int(header[12:14])
+        blocks_len = self.blocks.load(blocks_num, header[16:])
 
-        return 16 + optional_blocks_len
+        return 16 + blocks_len
 
 
-class TR31KeyBlock:
-    """
+class KeyBlock:
+    """TR-31 key block.
+
     Parameters
     ----------
     kbpk : bytes
         Key Block Protection Key.
-        The length of the KBPK must equal or greater
-        than the key to be protected.
-        Must be a valid DES key.
-    header : str
+        The length of the KBPK must equal or greater than the key to be protected.
+        Must be 8, 16 or 24 DES key for versions A and C.
+        Must be 16 or 24 DES key for versions B.
+        Must be 16, 24 or 32 AES key for version D.
+    header : Header or str
+        TR-31 key block header either in TR-31 string format or
+        as a Header class. Optional.
+        A full TR-31 key block in string format can be provided
+        to extract header from.
+
+    Attributes
+    ----------
+    kbpk : bytes
+        Key Block Protection Key.
+        The length of the KBPK must equal or greater than the key to be protected.
+        Must be 8, 16 or 24 DES key for versions A and C.
+        Must be 16 or 24 DES key for version B.
+        Must be 16, 24 or 32 AES key for version D.
+    header : Header
         TR-31 key block header.
-        This function does not validate the contents
-        of the header. It will check that the header
-        fullfils minimum length requirement and
-        is multiple of 8 bytes.
     """
 
     _algo_mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
@@ -393,10 +592,20 @@ class TR31KeyBlock:
     _algo_max_key_len = {"A": 24, "B": 24, "C": 24, "D": 32}
 
     def __init__(
-        self, kbpk: bytes, header: _typing.Optional[TR31Header] = None
+        self, kbpk: bytes, header: _typing.Optional[_typing.Union[Header, str]] = None
     ) -> None:
         self.kbpk = kbpk
-        self.header = header or TR31Header()
+
+        if isinstance(header, str):
+            self.header = Header()
+            self.header.load(header)
+        elif isinstance(header, Header):
+            self.header = header
+        else:
+            self.header = Header()
+
+    def __str__(self) -> str:
+        return str(self.header)
 
     def wrap(self, key: bytes, masked_key_len: _typing.Optional[int] = None) -> str:
         r"""Wrap key into a TR-31 key block version A, B or C.
@@ -419,6 +628,11 @@ class TR31KeyBlock:
             Key formatted in a TR-31 key block and encrypted
             under the KBPK.
 
+        Raises
+        ------
+        KeyBlockError
+        HeaderError
+
         Notes
         -----
         TR-31 version C is identical to version A with exception
@@ -427,8 +641,8 @@ class TR31KeyBlock:
         Examples
         --------
         >>> import psec
-        >>> h = psec.tr31.TR31Header("B", "P0", "T","E","00","N")
-        >>> kb = psec.tr31.TR31KeyBlock(kbpk=b"\xFF" * 16, header=h)
+        >>> h = psec.tr31.Header("B", "P0", "T","E","00","N")
+        >>> kb = psec.tr31.KeyBlock(kbpk=b"\xFF" * 16, header=h)
         >>> kb.wrap(key=b"\xEE" * 16)  # doctest: +SKIP
         'B0096P0TE00N0000342811F905093F2B797EB9248C1121C011C2AE41BEC63E33C9C2FDB320540D82327221AE9C5C34FB'
         >>> kb.header.version_id
@@ -448,8 +662,8 @@ class TR31KeyBlock:
         try:
             wrap = self._wrap_dispatch[self.header.version_id]
         except KeyError:
-            raise ValueError(
-                f"Key block version ID is not supported: '{self.header.version_id}'"
+            raise KeyBlockError(
+                f"Key block version ID ({self.header.version_id}) is not supported."
             )
 
         if masked_key_len is None:
@@ -481,6 +695,11 @@ class TR31KeyBlock:
             A DES key for versions A, B and C.
             An AES key for version D.
 
+        Raises
+        ------
+        KeyBlockError
+        HeaderError
+
         Notes
         -----
         TR-31 version C is identical to version A with exception
@@ -489,7 +708,7 @@ class TR31KeyBlock:
         Examples
         --------
         >>> import psec
-        >>> kb = psec.tr31.TR31KeyBlock(kbpk=b"\xFF" * 16)
+        >>> kb = psec.tr31.KeyBlock(kbpk=b"\xFF" * 16)
         >>> kb.unwrap("B0096P0TE00N0000342811F905093F2B797EB9248C1121C011C2AE41BEC63E33C9C2FDB320540D82327221AE9C5C34FB")
         b'\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee\xee'
         >>> kb.header.version_id
@@ -506,46 +725,56 @@ class TR31KeyBlock:
         'N'
         """
 
-        try:
-            key_block_len = int(key_block[1:5])
-        except ValueError:
-            raise ValueError(f"Key block length is invalid: '{key_block[1:5]}'")
+        if not _tools.ascii_numeric(key_block[1:5]):
+            raise KeyBlockError(f"Key block length ({key_block[1:5]}) is malformed. Expecting 4 digits.")
 
+        key_block_len = int(key_block[1:5])
         if key_block_len != len(key_block):
-            raise ValueError(
-                f"Key block length '{key_block[1:5]}' "
-                f"doesn't match data length '{str(len(key_block))}'"
+            raise KeyBlockError(
+                f"Key block length ({key_block[1:5]}) doesn't match input data length ({str(len(key_block))})."
             )
 
+        if len(key_block) % 8 != 0:
+            raise KeyBlockError(
+                f"Key block length ({str(len(key_block))}) must be multiple of 8."
+            )
+
+        # Extract header from the key block
         header_len = self.header.load(key_block)
+
+        # Extract MAC from the key block
         algo_mac_len = self._algo_mac_len[self.header.version_id]
         key_block_mac = key_block[header_len:][-algo_mac_len * 2 :]
-        key_block_key = key_block[header_len:][: -algo_mac_len * 2]
-
         try:
             received_mac = bytes.fromhex(key_block_mac)
         except ValueError:
-            raise ValueError(f"Key block MAC '{key_block_mac}' is invalid.")
+            raise KeyBlockError(
+                f"Key block MAC ({key_block_mac}) must be valid hexchars."
+            )
 
         if len(received_mac) != algo_mac_len:
-            raise ValueError(f"Key block MAC '{key_block_mac}' is invalid.")
+            raise KeyBlockError(f"Key block MAC ({key_block_mac}) is malformed.")
 
+        # Extract encrypted key data from the key block
+        key_block_key = key_block[header_len:][: -algo_mac_len * 2]
         try:
             enc_key = bytes.fromhex(key_block_key)
         except ValueError:
-            raise ValueError(f"Encrypted key '{key_block_key}' is invalid.")
+            raise KeyBlockError(
+                f"Encrypted key ({key_block_key}) must be valid hexchars."
+            )
 
         algo_block_size = self._algo_block_size[self.header.version_id]
         if len(enc_key) < algo_block_size or len(enc_key) % algo_block_size != 0:
-            raise ValueError(
+            raise KeyBlockError(
                 f"Encrypted key length must be multiple of {str(algo_block_size)}: '{key_block_key}'"
             )
 
         try:
             unwrap = self._unwrap_dispatch[self.header.version_id]
         except KeyError:
-            raise ValueError(
-                f"Key block version ID is not supported: '{self.header.version_id}'"
+            raise KeyBlockError(
+                f"Key block version ID ({self.header.version_id}) is not supported."
             )
 
         return unwrap(self, key_block[:header_len], enc_key, received_mac)
@@ -556,17 +785,19 @@ class TR31KeyBlock:
         """Wrap key into TR-31 key block version B"""
 
         if len(self.kbpk) not in {16, 24}:
-            raise ValueError(
-                f"KBPK must be a double or triple DES key: '{str(len(self.kbpk))}'"
+            raise KeyBlockError(
+                f"KBPK length ({str(len(self.kbpk))}) must be 2key or 3key TDES.'"
             )
 
         if len(key) not in {8, 16, 24}:
-            raise ValueError(
-                f"Key must be a single, double or triple DES key: '{str(len(key))}'"
+            raise KeyBlockError(
+                f"Key length ({str(len(key))}) must be a 1key, 2key or 3key TDES."
             )
 
         if len(key) > len(self.kbpk):
-            raise ValueError(f"Key must not be longer than KBPK: '{str(len(key))}'")
+            raise KeyBlockError(
+                f"Key length ({str(len(key))}) must not be longer than KBPK ({str(len(self.kbpk))})."
+            )
 
         # Derive Key Block Encryption and Authentication Keys
         kbek, kbak = self._b_derive()
@@ -587,8 +818,8 @@ class TR31KeyBlock:
         """Unwrap key from TR-31 key block version B"""
 
         if len(self.kbpk) not in {16, 24}:
-            raise ValueError(
-                f"KBPK must be a double or triple DES key: '{str(len(self.kbpk))}'"
+            raise KeyBlockError(
+                f"KBPK length ({str(len(self.kbpk))}) must be 2key or 3key TDES.'"
             )
 
         # Derive Key Block Encryption and Authentication Keys
@@ -600,21 +831,21 @@ class TR31KeyBlock:
         # Validate MAC
         mac = self._b_generate_mac(kbak, header, clear_key_data)
         if mac != received_mac:
-            raise ValueError(
-                f"Key block MAC '{received_mac.hex().upper()}' does not match generated MAC '{mac.hex().upper()}'."
+            raise KeyBlockError(
+                f"Key block MAC ({received_mac.hex().upper()}) does not match generated MAC."
             )
 
         # Extract key from key data: 2 byte key length measured in bits + key + pad
         key_length = int.from_bytes(clear_key_data[0:2], "big") // 8
         if key_length not in {8, 16, 24}:
-            raise ValueError(
-                f"Decrypted key length '{str(key_length)}' is invalid. Must be 8, 16, 24."
+            raise KeyBlockError(
+                f"Decrypted key length ({str(key_length)}) must be a 1key, 2key or 3key TDES."
             )
 
         key = clear_key_data[2 : key_length + 2]
         if len(key) != key_length:
-            raise ValueError(
-                f"Decrypted key is malformed. Key length '{str(len(key))}' does not match encoded key length '{str(key_length)}'."
+            raise KeyBlockError(
+                f"Decrypted key is malformed. Expected {str(key_length)} bytes, received {str(len(key))}."
             )
 
         return key
@@ -698,17 +929,19 @@ class TR31KeyBlock:
         """Wrap key into TR-31 key block version A or C"""
 
         if len(self.kbpk) not in {8, 16, 24}:
-            raise ValueError(
-                f"KBPK must be a single, double or triple DES key: '{str(len(self.kbpk))}'"
+            raise KeyBlockError(
+                f"KBPK length ({str(len(self.kbpk))}) must be 1key, 2key or 3key TDES.'"
             )
 
         if len(key) not in {8, 16, 24}:
-            raise ValueError(
-                f"Key must be a single, double or triple DES key: '{str(len(key))}'"
+            raise KeyBlockError(
+                f"Key length ({str(len(key))}) must be a 1key, 2key or 3key TDES."
             )
 
         if len(key) > len(self.kbpk):
-            raise ValueError(f"Key must not be longer than KBPK: '{str(len(key))}'")
+            raise KeyBlockError(
+                f"Key length ({str(len(key))}) must not be longer than KBPK ({str(len(self.kbpk))})."
+            )
 
         # Derive Key Block Encryption and Authentication Keys
         kbek, kbak = self._c_derive()
@@ -731,8 +964,8 @@ class TR31KeyBlock:
         """Unwrap key from TR-31 key block version A or C"""
 
         if len(self.kbpk) not in {8, 16, 24}:
-            raise ValueError(
-                f"KBPK must be a single, double or triple DES key: '{str(len(self.kbpk))}'"
+            raise KeyBlockError(
+                f"KBPK length ({str(len(self.kbpk))}) must be 1key, 2key or 3key TDES.'"
             )
 
         # Derive Key Block Encryption and Authentication Keys
@@ -741,8 +974,8 @@ class TR31KeyBlock:
         # Validate MAC
         mac = self._c_generate_mac(kbak, header, enc_key)
         if mac != received_mac:
-            raise ValueError(
-                f"Key block MAC '{received_mac.hex().upper()}' does not match generated MAC '{mac.hex().upper()}'."
+            raise KeyBlockError(
+                f"Key block MAC ({received_mac.hex().upper()}) does not match generated MAC."
             )
 
         # Decrypt key data
@@ -753,14 +986,14 @@ class TR31KeyBlock:
         # Extract key from key data: 2 byte key length measured in bits + key + pad
         key_length = int.from_bytes(clear_key_data[0:2], "big") // 8
         if key_length not in {8, 16, 24}:
-            raise ValueError(
-                f"Decrypted key length '{str(key_length)}' is invalid. Must be 8, 16, 24."
+            raise KeyBlockError(
+                f"Decrypted key length ({str(key_length)}) must be a 1key, 2key or 3key TDES."
             )
 
         key = clear_key_data[2 : key_length + 2]
         if len(key) != key_length:
-            raise ValueError(
-                f"Decrypted key is malformed. Key length '{str(len(key))}' does not match encoded key length '{str(key_length)}'."
+            raise KeyBlockError(
+                f"Decrypted key is malformed. Expected {str(key_length)} bytes, received {str(len(key))}."
             )
 
         return key
@@ -777,7 +1010,7 @@ class TR31KeyBlock:
         return _mac.generate_cbc_mac(kbak, header.encode("ascii") + enc_key, 1, 4)
 
     _wrap_dispatch: _typing.Dict[
-        str, _typing.Callable[["TR31KeyBlock", str, bytes, int], str]
+        str, _typing.Callable[["KeyBlock", str, bytes, int], str]
     ] = {
         "A": _c_wrap,
         "B": _b_wrap,
@@ -785,7 +1018,7 @@ class TR31KeyBlock:
     }
 
     _unwrap_dispatch: _typing.Dict[
-        str, _typing.Callable[["TR31KeyBlock", str, bytes, bytes], bytes]
+        str, _typing.Callable[["KeyBlock", str, bytes, bytes], bytes]
     ] = {
         "A": _c_unwrap,
         "B": _b_unwrap,

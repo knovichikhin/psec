@@ -3,25 +3,27 @@ from psec import tr31
 
 
 def test_header_load() -> None:
-    h = tr31.TR31Header()
+    h = tr31.Header()
     assert h.load("B0000P0TE00N0000xxxxxxxx") == 16
     assert h.version_id == "B"
     assert h.key_usage == "P0"
     assert h.algorithm == "T"
     assert h.mode_of_use == "E"
     assert h.exportability == "N"
+    assert h.reserved == "00"
     assert len(h.blocks) == 0
     assert str(h) == "B0016P0TE00N0000"
 
 
 def test_header_load_optional() -> None:
-    h = tr31.TR31Header()
+    h = tr31.Header()
     assert h.load("B0000P0TE00N0100KS1800604B120F9292800000xxxxxxxx") == 40
     assert h.version_id == "B"
     assert h.key_usage == "P0"
     assert h.algorithm == "T"
     assert h.mode_of_use == "E"
     assert h.exportability == "N"
+    assert h.reserved == "00"
     assert len(h.blocks) == 1
     assert h.blocks["KS"] == "00604B120F9292800000"
     assert str(h) == "B0040P0TE00N0100KS1800604B120F9292800000"
@@ -29,26 +31,28 @@ def test_header_load_optional() -> None:
 
 def test_header_load_optional_with_bad_count() -> None:
     """One optional block is present, but number of optional blocks is 00"""
-    h = tr31.TR31Header()
+    h = tr31.Header()
     assert h.load("B0000P0TE00N0000KS1800604B120F9292800000") == 16
     assert h.version_id == "B"
     assert h.key_usage == "P0"
     assert h.algorithm == "T"
     assert h.mode_of_use == "E"
     assert h.exportability == "N"
+    assert h.reserved == "00"
     assert len(h.blocks) == 0
     assert str(h) == "B0016P0TE00N0000"
 
 
 def test_header_load_optional_padded() -> None:
     """Two optional blocks are present, one is pad block"""
-    h = tr31.TR31Header()
+    h = tr31.Header()
     assert h.load("B0000P0TE00N0200KS1200604B120F9292PB0600") == 40
     assert h.version_id == "B"
     assert h.key_usage == "P0"
     assert h.algorithm == "T"
     assert h.mode_of_use == "E"
     assert h.exportability == "N"
+    assert h.reserved == "00"
     assert len(h.blocks) == 1
     assert h.blocks["KS"] == "00604B120F9292"
     assert str(h) == "B0040P0TE00N0200KS1200604B120F9292PB0600"
@@ -56,13 +60,14 @@ def test_header_load_optional_padded() -> None:
 
 def test_header_load_optional_256() -> None:
     """An optional block with length >255"""
-    h = tr31.TR31Header()
+    h = tr31.Header()
     assert h.load("B0000P0TE00N0200KS0002010A" + "P" * 256 + "PB0600") == 288
     assert h.version_id == "B"
     assert h.key_usage == "P0"
     assert h.algorithm == "T"
     assert h.mode_of_use == "E"
     assert h.exportability == "N"
+    assert h.reserved == "00"
     assert len(h.blocks) == 1
     assert h.blocks["KS"] == "P" * 256
     assert str(h) == "B0288P0TE00N0200KS0002010A" + "P" * 256 + "PB0600"
@@ -70,16 +75,99 @@ def test_header_load_optional_256() -> None:
 
 def test_header_load_optional_extended_length() -> None:
     """An optional block with extended length just because"""
-    h = tr31.TR31Header()
+    h = tr31.Header()
     assert h.load("B0000P0TE00N0200KS00011600604B120F9292PB0A000000") == 48
     assert h.version_id == "B"
     assert h.key_usage == "P0"
     assert h.algorithm == "T"
     assert h.mode_of_use == "E"
     assert h.exportability == "N"
+    assert h.reserved == "00"
     assert len(h.blocks) == 1
     assert h.blocks["KS"] == "00604B120F9292"
     assert str(h) == "B0040P0TE00N0200KS1200604B120F9292PB0600"
+
+
+def test_header_load_optional_multiple() -> None:
+    """Load multiple optional blocks"""
+    h = tr31.Header()
+    assert h.load("B0000P0TE00N0400KS1800604B120F9292800000T104T20600PB0600") == 56
+    assert h.version_id == "B"
+    assert h.key_usage == "P0"
+    assert h.algorithm == "T"
+    assert h.mode_of_use == "E"
+    assert h.exportability == "N"
+    assert h.reserved == "00"
+    assert len(h.blocks) == 3
+    assert h.blocks["KS"] == "00604B120F9292800000"
+    assert h.blocks["T1"] == ""
+    assert h.blocks["T2"] == "00"
+    assert str(h) == "B0056P0TE00N0400KS1800604B120F9292800000T104T20600PB0600"
+
+
+def test_header_load_optional_reset() -> None:
+    """Make sure optional blocks are reset between loads"""
+    h = tr31.Header()
+    assert h.load("B0000P0TE00N0400KS1800604B120F9292800000T104T20600PB0600") == 56
+    assert h.load("B0000P0TE00N0000") == 16
+    assert h.version_id == "B"
+    assert h.key_usage == "P0"
+    assert h.algorithm == "T"
+    assert h.mode_of_use == "E"
+    assert h.exportability == "N"
+    assert h.reserved == "00"
+    assert len(h.blocks) == 0
+    assert str(h) == "B0016P0TE00N0000"
+
+
+# fmt: off
+@pytest.mark.parametrize(
+    ["header", "error"],
+    [
+        ("B0000P0TE00N0100",         "Block ID () is malformed."),
+        ("B0000P0TE00N0100K",        "Block ID (K) is malformed."),
+        ("B0000P0TE00N0100KS",       "Block KS length () is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0100KS1",      "Block KS length (1) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0100KS1Y",     "Block KS length (1Y) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0100KS02",     "Block KS length does not include block ID and length."),
+        ("B0000P0TE00N0100KS071",    "Block KS data is malformed. Received 1/3. Block data: '1'"),
+        ("B0000P0TE00N0100KS00",     "Block KS length of length () is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0100KS001",    "Block KS length of length (1) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0100KS001S",   "Block KS length of length (1S) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0100KS0000",   "Block KS length of length must not be 0."),
+        ("B0000P0TE00N0100KS0001",   "Block KS length () is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0100KS00010",  "Block KS length (0) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0100KS00010H", "Block KS length (0H) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0100KS000101", "Block KS length does not include block ID and length."),
+        ("B0000P0TE00N0100KS0001FF", "Block KS data is malformed. Received 0/247. Block data: ''"),
+        ("B0000P0TE00N0200KS07000T",     "Block ID (T) is malformed."),
+        ("B0000P0TE00N0200KS0600TT",     "Block TT length () is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0200KS050TT1",     "Block TT length (1) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0200KS04TT1X",     "Block TT length (1X) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0200KS04TT03",     "Block TT length does not include block ID and length."),
+        ("B0000P0TE00N0200KS04TT05",     "Block TT data is malformed. Received 0/1. Block data: ''"),
+        ("B0000P0TE00N0200KS04TT00",     "Block TT length of length () is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0200KS04TT001",    "Block TT length of length (1) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0200KS04TT001S",   "Block TT length of length (1S) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0200KS04TT0000",   "Block TT length of length must not be 0."),
+        ("B0000P0TE00N0200KS04TT0001",   "Block TT length () is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0200KS04TT00010",  "Block TT length (0) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0200KS04TT00010H", "Block TT length (0H) is malformed. Expecting 2 hexchars."),
+        ("B0000P0TE00N0200KS04TT000101", "Block TT length does not include block ID and length."),
+        ("B0000P0TE00N0200KS04TT00011F", "Block TT data is malformed. Received 0/23. Block data: ''"),
+        ("B0000P0TE00N0100**04",         "Block ID (**) is invalid. Expecting 2 alphanumeric characters."),
+        ("B0000P0TE00N0200KS0600??04",   "Block ID (??) is invalid. Expecting 2 alphanumeric characters."),
+        ("B0000P0TE00N0100KS05\x03",     "Block KS data is invalid. Expecting ASCII printable characters. Data: '\x03'"),
+        ("B0000P0TE00N0200KS04TT05\xFF", "Block TT data is invalid. Expecting ASCII printable characters. Data: '\xFF'"),
+    ],
+)
+# fmt: on
+def test_header_block_load_exceptions(header: str, error: str) -> None:
+    """Make sure optional blocks handle input validation"""
+    h = tr31.Header()
+    with pytest.raises(tr31.HeaderError) as e:
+        h.load(header)
+    assert e.value.args[0] == error
 
 
 # fmt: off
@@ -109,14 +197,14 @@ def test_header_load_optional_extended_length() -> None:
 def test_kb_sanity(version_id: str, kbpk: bytes, key: bytes) -> None:
     """Make sure that wrapping and then unwrapping produces original key"""
 
-    def sanity_check(kbpk: bytes, key: bytes, header: tr31.TR31Header) -> None:
-        kb = tr31.TR31KeyBlock(kbpk, header)
+    def sanity_check(kbpk: bytes, key: bytes, header: tr31.Header) -> None:
+        kb = tr31.KeyBlock(kbpk, header)
         raw_kb = kb.wrap(key)
 
         assert key == kb.unwrap(raw_kb)
-        assert key == tr31.TR31KeyBlock(kbpk).unwrap(raw_kb)
+        assert key == tr31.KeyBlock(kbpk).unwrap(raw_kb)
 
-    header = tr31.TR31Header(version_id, "P0", "T", "E", "00", "N")
+    header = tr31.Header(version_id, "P0", "T", "E", "00", "N")
     sanity_check(kbpk, key, header)
 
 
@@ -148,4 +236,4 @@ def test_kb_known_values(kbpk: str, key: str, tr31kb: str) -> None:
     """Test against known values from 3rd parties"""
     kbpk_b = bytes.fromhex(kbpk)
     key_b = bytes.fromhex(key)
-    assert key_b == tr31.TR31KeyBlock(kbpk_b).unwrap(tr31kb)
+    assert key_b == tr31.KeyBlock(kbpk_b).unwrap(tr31kb)
