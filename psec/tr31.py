@@ -5,7 +5,7 @@ from psec import des as _des
 from psec import mac as _mac
 from psec import tools as _tools
 
-__all__ = ["KeyBlock", "Header", "HeaderError", "KeyBlockError"]
+__all__ = ["KeyBlock", "KeyBlockError", "Header", "HeaderError"]
 
 
 class HeaderError(ValueError):
@@ -56,25 +56,6 @@ class Blocks(_typing.MutableMapping[str, str]):
     def __repr__(self) -> str:
         return repr(self._blocks)
 
-    def __copy__(self) -> object:
-        inst = self.__class__.__new__(self.__class__)
-        inst.__dict__.update(self.__dict__)
-        # Create a copy and avoid triggering descriptors
-        inst.__dict__["_blocks"] = self.__dict__["_blocks"].copy()
-        return inst
-
-    def copy(self) -> "Blocks":
-        import copy
-
-        blocks = self._blocks
-        try:
-            self._blocks = {}
-            c = copy.copy(self)
-        finally:
-            self._blocks = blocks
-        c.update(self)
-        return c
-
     def dump(self, algo_block_size: int) -> _typing.Tuple[int, str]:
         """Format TR-31 header optional blocks into a string.
 
@@ -120,7 +101,7 @@ class Blocks(_typing.MutableMapping[str, str]):
                 except OverflowError:
                     raise HeaderError(
                         f"Block {block_id} length ({str(len(block_data))}) is too long."
-                    )
+                    ) from None
 
             blocks_list.append(block_data)
 
@@ -140,7 +121,7 @@ class Blocks(_typing.MutableMapping[str, str]):
 
         if len(self) + pb_block_count > 99:
             raise HeaderError(
-                f"Number of optional blocks ({str(len(self) + pb_block_count)}) "
+                f"Number of blocks ({str(len(self) + pb_block_count)}) "
                 f"exceeds limit of 99."
             )
 
@@ -264,6 +245,7 @@ class Header:
         Identifies the version of the key block, which defines the method
         by which it is cryptographically protected and the content and
         layout of the block:
+
             - A - TDES variant. Deprecated and should not be used for new applications.
             - B - TDES key derivation. Preferred TDES implementation.
             - C - TDES variant. Same as A.
@@ -292,6 +274,7 @@ class Header:
         Identifies the version of the key block, which defines the method
         by which it is cryptographically protected and the content and
         layout of the block:
+
             - A = TDES variant. Deprecated and should not be used for new applications.
             - B = TDES key derivation. Preferred TDES implementation.
             - C = TDES variant. Same as A.
@@ -371,7 +354,7 @@ class Header:
     @version_id.setter
     def version_id(self, version_id: str) -> None:
         if version_id not in {"A", "B", "C", "D"}:
-            raise HeaderError(f"Version ID is not supported: '{version_id}'")
+            raise HeaderError(f"Version ID ({version_id}) is not supported.")
         self._version_id = version_id
 
     @property
@@ -384,7 +367,7 @@ class Header:
     @key_usage.setter
     def key_usage(self, key_usage: str) -> None:
         if len(key_usage) != 2 or not _tools.ascii_alphanumeric(key_usage):
-            raise HeaderError(f"Key Usage is invalid: '{key_usage}'")
+            raise HeaderError(f"Key usage ({key_usage}) is invalid.")
         self._key_usage = key_usage
 
     @property
@@ -395,7 +378,7 @@ class Header:
     @algorithm.setter
     def algorithm(self, algorithm: str) -> None:
         if len(algorithm) != 1 or not _tools.ascii_alphanumeric(algorithm):
-            raise HeaderError(f"Algorithm is invalid: '{algorithm}'")
+            raise HeaderError(f"Algorithm ({algorithm}) is invalid.")
         self._algorithm = algorithm
 
     @property
@@ -408,7 +391,7 @@ class Header:
     @mode_of_use.setter
     def mode_of_use(self, mode_of_use: str) -> None:
         if len(mode_of_use) != 1 or not _tools.ascii_alphanumeric(mode_of_use):
-            raise HeaderError(f"Mode of use is invalid: '{mode_of_use}'")
+            raise HeaderError(f"Mode of use ({mode_of_use}) is invalid.")
         self._mode_of_use = mode_of_use
 
     @property
@@ -423,7 +406,7 @@ class Header:
     @version_num.setter
     def version_num(self, version_num: str) -> None:
         if len(version_num) != 2 or not _tools.ascii_alphanumeric(version_num):
-            raise HeaderError(f"Version number is invalid: '{version_num}'")
+            raise HeaderError(f"Version number ({version_num}) is invalid.")
         self._version_num = version_num
 
     @property
@@ -436,7 +419,7 @@ class Header:
     @exportability.setter
     def exportability(self, exportability: str) -> None:
         if len(exportability) != 1 or not _tools.ascii_alphanumeric(exportability):
-            raise HeaderError(f"Exportability is invalid: '{exportability}'")
+            raise HeaderError(f"Exportability ({exportability}) is invalid.")
         self._exportability = exportability
 
     @property
@@ -468,7 +451,7 @@ class Header:
         if key_len not in self._algo_key_sizes[self.version_id]:
             valid_sizes = ", ".join(map(str, self._algo_key_sizes[self.version_id]))
             raise HeaderError(
-                f"key_len ({str(key_len)}) must be {valid_sizes} for key block version {self.version_id}."
+                f"Key length ({str(key_len)}) must be {valid_sizes} for key block version {self.version_id}."
             )
 
         algo_block_size = self._algo_block_size[self.version_id]
@@ -486,7 +469,7 @@ class Header:
         )
 
         if kb_len > 9992:
-            HeaderError(
+            raise HeaderError(
                 f"Total key block length ({str(kb_len)}) exceeds limit of 9992."
             )
 
@@ -528,17 +511,14 @@ class Header:
         """
 
         if not _tools.ascii_alphanumeric(header[:16]):
-            raise HeaderError(f"Header must be ASCII alphanumeric. Header: '{header[:16]}'")
-
-        # TODO: experiment without this. Let keyblock verify this
-        # if len(header) % 8 != 0:
-        #    raise HeaderError(
-        #        f"Header length ({str(len(header))}) must be multiple of 8."
-        #    )
+            raise HeaderError(
+                f"Header must be ASCII alphanumeric. Header: '{header[:16]}'"
+            )
 
         if len(header) < 16:
             raise HeaderError(
-                f"Header length ({str(len(header))}) must be >=16 to include a complete header."
+                f"Header length ({str(len(header))}) must be >=16. "
+                f"Header: '{header[:16]}'"
             )
 
         self.version_id = header[0]
@@ -550,7 +530,10 @@ class Header:
         self._reserved = header[14:16]
 
         if not _tools.ascii_numeric(header[12:14]):
-            HeaderError(f"Number of optional blocks ({header[12:14]}) is invalid. Expecting 2 digits.")
+            raise HeaderError(
+                f"Number of blocks ({header[12:14]}) is invalid. "
+                f"Expecting 2 digits."
+            )
 
         blocks_num = int(header[12:14])
         blocks_len = self.blocks.load(blocks_num, header[16:])
@@ -588,7 +571,6 @@ class KeyBlock:
     """
 
     _algo_mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
-    _algo_block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
     _algo_max_key_len = {"A": 24, "B": 24, "C": 24, "D": 32}
 
     def __init__(
@@ -664,7 +646,7 @@ class KeyBlock:
         except KeyError:
             raise KeyBlockError(
                 f"Key block version ID ({self.header.version_id}) is not supported."
-            )
+            ) from None
 
         if masked_key_len is None:
             masked_key_len = max(
@@ -725,13 +707,21 @@ class KeyBlock:
         'N'
         """
 
+        # Extract header from the key block
+        header_len = self.header.load(key_block)
+
+        # Verify block length
         if not _tools.ascii_numeric(key_block[1:5]):
-            raise KeyBlockError(f"Key block length ({key_block[1:5]}) is malformed. Expecting 4 digits.")
+            raise KeyBlockError(
+                f"Key block header length ({key_block[1:5]}) is malformed. "
+                f"Expecting 4 digits."
+            )
 
         key_block_len = int(key_block[1:5])
         if key_block_len != len(key_block):
             raise KeyBlockError(
-                f"Key block length ({key_block[1:5]}) doesn't match input data length ({str(len(key_block))})."
+                f"Key block header length ({str(key_block_len)}) "
+                f"doesn't match input data length ({str(len(key_block))})."
             )
 
         if len(key_block) % 8 != 0:
@@ -739,45 +729,42 @@ class KeyBlock:
                 f"Key block length ({str(len(key_block))}) must be multiple of 8."
             )
 
-        # Extract header from the key block
-        header_len = self.header.load(key_block)
-
-        # Extract MAC from the key block
+        # Extract MAC from the key block.
+        # MAC length is fixed for each version ID.
         algo_mac_len = self._algo_mac_len[self.header.version_id]
-        key_block_mac = key_block[header_len:][-algo_mac_len * 2 :]
+        received_mac_s = key_block[header_len:][-algo_mac_len * 2 :]
         try:
-            received_mac = bytes.fromhex(key_block_mac)
+            received_mac = bytes.fromhex(received_mac_s)
         except ValueError:
             raise KeyBlockError(
-                f"Key block MAC ({key_block_mac}) must be valid hexchars."
-            )
+                f"Key block MAC must be valid hexchars. MAC: '{received_mac_s}'"
+            ) from None
 
         if len(received_mac) != algo_mac_len:
-            raise KeyBlockError(f"Key block MAC ({key_block_mac}) is malformed.")
+            raise KeyBlockError(
+                f"Key block MAC is malformed. "
+                f"Received {str(len(received_mac_s))}/{str(algo_mac_len * 2)}. "
+                f"MAC: '{received_mac_s}'"
+            )
 
-        # Extract encrypted key data from the key block
-        key_block_key = key_block[header_len:][: -algo_mac_len * 2]
+        # Extract encrypted key data from the key block.
+        # Whatever is left after taking header and MAC out is the key data.
+        key_data_s = key_block[header_len:][: -algo_mac_len * 2]
         try:
-            enc_key = bytes.fromhex(key_block_key)
+            key_data = bytes.fromhex(key_data_s)
         except ValueError:
             raise KeyBlockError(
-                f"Encrypted key ({key_block_key}) must be valid hexchars."
-            )
-
-        algo_block_size = self._algo_block_size[self.header.version_id]
-        if len(enc_key) < algo_block_size or len(enc_key) % algo_block_size != 0:
-            raise KeyBlockError(
-                f"Encrypted key length must be multiple of {str(algo_block_size)}: '{key_block_key}'"
-            )
+                f"Encrypted key must be valid hexchars. Key data: '{key_data_s}'"
+            ) from None
 
         try:
             unwrap = self._unwrap_dispatch[self.header.version_id]
         except KeyError:
             raise KeyBlockError(
                 f"Key block version ID ({self.header.version_id}) is not supported."
-            )
+            ) from None
 
-        return unwrap(self, key_block[:header_len], enc_key, received_mac)
+        return unwrap(self, key_block[:header_len], key_data, received_mac)
 
     # Version B
 
@@ -786,17 +773,17 @@ class KeyBlock:
 
         if len(self.kbpk) not in {16, 24}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be 2key or 3key TDES.'"
+                f"KBPK length ({str(len(self.kbpk))}) must be 2-key or 3-key TDES."
             )
 
         if len(key) not in {8, 16, 24}:
             raise KeyBlockError(
-                f"Key length ({str(len(key))}) must be a 1key, 2key or 3key TDES."
+                f"Key length ({str(len(key))}) must be 1-key, 2-key or 3-key TDES."
             )
 
         if len(key) > len(self.kbpk):
             raise KeyBlockError(
-                f"Key length ({str(len(key))}) must not be longer than KBPK ({str(len(self.kbpk))})."
+                f"Key length ({str(len(key))}) must be less than or equal to KBPK ({str(len(self.kbpk))})."
             )
 
         # Derive Key Block Encryption and Authentication Keys
@@ -814,39 +801,39 @@ class KeyBlock:
 
         return header + enc_key.hex().upper() + mac.hex().upper()
 
-    def _b_unwrap(self, header: str, enc_key: bytes, received_mac: bytes) -> bytes:
+    def _b_unwrap(self, header: str, key_data: bytes, received_mac: bytes) -> bytes:
         """Unwrap key from TR-31 key block version B"""
 
         if len(self.kbpk) not in {16, 24}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be 2key or 3key TDES.'"
+                f"KBPK length ({str(len(self.kbpk))}) must be 2-key or 3-key TDES."
+            )
+
+        if len(key_data) < 16 or len(key_data) % 8 != 0:
+            raise KeyBlockError(
+                f"Encrypted key is malformed. Key data: '{key_data.hex().upper()}'"
             )
 
         # Derive Key Block Encryption and Authentication Keys
         kbek, kbak = self._b_derive()
 
         # Decrypt key data
-        clear_key_data = _des.decrypt_tdes_cbc(kbek, received_mac, enc_key)
+        clear_key_data = _des.decrypt_tdes_cbc(kbek, received_mac, key_data)
 
         # Validate MAC
         mac = self._b_generate_mac(kbak, header, clear_key_data)
         if mac != received_mac:
-            raise KeyBlockError(
-                f"Key block MAC ({received_mac.hex().upper()}) does not match generated MAC."
-            )
+            raise KeyBlockError(f"Key block MAC doesn't match generated MAC.")
 
         # Extract key from key data: 2 byte key length measured in bits + key + pad
-        key_length = int.from_bytes(clear_key_data[0:2], "big") // 8
-        if key_length not in {8, 16, 24}:
-            raise KeyBlockError(
-                f"Decrypted key length ({str(key_length)}) must be a 1key, 2key or 3key TDES."
-            )
+        key_length = int.from_bytes(clear_key_data[0:2], "big")
+        if key_length not in {64, 128, 192}:
+            raise KeyBlockError(f"Decrypted key is invalid.")
 
+        key_length = key_length // 8
         key = clear_key_data[2 : key_length + 2]
         if len(key) != key_length:
-            raise KeyBlockError(
-                f"Decrypted key is malformed. Expected {str(key_length)} bytes, received {str(len(key))}."
-            )
+            raise KeyBlockError(f"Decrypted key is malformed.")
 
         return key
 
@@ -930,17 +917,17 @@ class KeyBlock:
 
         if len(self.kbpk) not in {8, 16, 24}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be 1key, 2key or 3key TDES.'"
+                f"KBPK length ({str(len(self.kbpk))}) must be 1-key, 2-key or 3-key TDES."
             )
 
         if len(key) not in {8, 16, 24}:
             raise KeyBlockError(
-                f"Key length ({str(len(key))}) must be a 1key, 2key or 3key TDES."
+                f"Key length ({str(len(key))}) must be 1-key, 2-key or 3-key TDES."
             )
 
         if len(key) > len(self.kbpk):
             raise KeyBlockError(
-                f"Key length ({str(len(key))}) must not be longer than KBPK ({str(len(self.kbpk))})."
+                f"Key length ({str(len(key))}) must be less than or equal to KBPK ({str(len(self.kbpk))})."
             )
 
         # Derive Key Block Encryption and Authentication Keys
@@ -960,41 +947,41 @@ class KeyBlock:
 
         return header + enc_key.hex().upper() + mac.hex().upper()
 
-    def _c_unwrap(self, header: str, enc_key: bytes, received_mac: bytes) -> bytes:
+    def _c_unwrap(self, header: str, key_data: bytes, received_mac: bytes) -> bytes:
         """Unwrap key from TR-31 key block version A or C"""
 
         if len(self.kbpk) not in {8, 16, 24}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be 1key, 2key or 3key TDES.'"
+                f"KBPK length ({str(len(self.kbpk))}) must be 1-key, 2-key or 3-key TDES."
+            )
+
+        if len(key_data) < 16 or len(key_data) % 8 != 0:
+            raise KeyBlockError(
+                f"Encrypted key is malformed. Key data: '{key_data.hex().upper()}'"
             )
 
         # Derive Key Block Encryption and Authentication Keys
         kbek, kbak = self._c_derive()
 
         # Validate MAC
-        mac = self._c_generate_mac(kbak, header, enc_key)
+        mac = self._c_generate_mac(kbak, header, key_data)
         if mac != received_mac:
-            raise KeyBlockError(
-                f"Key block MAC ({received_mac.hex().upper()}) does not match generated MAC."
-            )
+            raise KeyBlockError(f"Key block MAC doesn't match generated MAC.")
 
         # Decrypt key data
         clear_key_data = _des.decrypt_tdes_cbc(
-            kbek, header.encode("ascii")[:8], enc_key
+            kbek, header.encode("ascii")[:8], key_data
         )
 
         # Extract key from key data: 2 byte key length measured in bits + key + pad
-        key_length = int.from_bytes(clear_key_data[0:2], "big") // 8
-        if key_length not in {8, 16, 24}:
-            raise KeyBlockError(
-                f"Decrypted key length ({str(key_length)}) must be a 1key, 2key or 3key TDES."
-            )
+        key_length = int.from_bytes(clear_key_data[0:2], "big")
+        if key_length not in {64, 128, 192}:
+            raise KeyBlockError(f"Decrypted key is invalid.")
 
+        key_length = key_length // 8
         key = clear_key_data[2 : key_length + 2]
         if len(key) != key_length:
-            raise KeyBlockError(
-                f"Decrypted key is malformed. Expected {str(key_length)} bytes, received {str(len(key))}."
-            )
+            raise KeyBlockError(f"Decrypted key is malformed.")
 
         return key
 
@@ -1005,9 +992,9 @@ class KeyBlock:
             _tools.xor(self.kbpk, b"\x4D" * len(self.kbpk)),  # Authentication Key
         )
 
-    def _c_generate_mac(self, kbak: bytes, header: str, enc_key: bytes) -> bytes:
+    def _c_generate_mac(self, kbak: bytes, header: str, key_data: bytes) -> bytes:
         """Generate MAC using KBAK"""
-        return _mac.generate_cbc_mac(kbak, header.encode("ascii") + enc_key, 1, 4)
+        return _mac.generate_cbc_mac(kbak, header.encode("ascii") + key_data, 1, 4)
 
     _wrap_dispatch: _typing.Dict[
         str, _typing.Callable[["KeyBlock", str, bytes, int], str]
@@ -1024,3 +1011,110 @@ class KeyBlock:
         "B": _b_unwrap,
         "C": _c_unwrap,
     }
+
+
+def wrap(
+    kbpk: bytes,
+    header: _typing.Union[Header, str],
+    key: bytes,
+    masked_key_len: _typing.Optional[int] = None,
+) -> str:
+    r"""Wrap key into a TR-31 key block version A, B or C.
+
+    Parameters
+    ----------
+    kbpk : bytes
+        Key Block Protection Key.
+        The length of the KBPK must equal or greater than the key to be protected.
+        Must be 8, 16 or 24 DES key for versions A and C.
+        Must be 16 or 24 DES key for versions B.
+        Must be 16, 24 or 32 AES key for version D.
+    header : Header or str
+        TR-31 key block header either in TR-31 string format or
+        as a Header class.
+        A full TR-31 key block in string format can be provided
+        to extract header from.
+    key : bytes
+        A key to be wrapped.
+        Must be a valid DES key for versions A, B and C.
+        Must be a valid AES key for version D.
+    masked_key_len : int, optional
+        Desired key length in bytes to mask true key length.
+        Must be 8, 16 or 24 for versions A, B and C (DES).
+        Must be 16, 24 or 32 for version D (AES).
+        Defaults to max key size.
+
+    Returns
+    -------
+    key_block : str
+        Key formatted in a TR-31 key block and encrypted
+        under the KBPK.
+
+    Raises
+    ------
+    KeyBlockError
+    HeaderError
+
+    Examples
+    --------
+    >>> import psec
+    >>> psec.tr31.wrap(
+    ...     kbpk=b"\xAB" * 16,
+    ...     header="B0096P0TE00N0000",
+    ...     key=b"\xCD" * 16)  # doctest: +SKIP
+    'B0096P0TE00N0000471D4FBE35E5865BDE20DBF4C15503161F55D681170BF8DD14D01B6822EF8550CB67C569DE8AC048'
+    """
+    return KeyBlock(kbpk, header).wrap(key, masked_key_len)
+
+
+def unwrap(kbpk: bytes, key_block: str) -> _typing.Tuple[Header, bytes]:
+    r"""Unwrap key from a TR-31 key block version A, B or C.
+
+    Parameters
+    ----------
+    kbpk : bytes
+        Key Block Protection Key.
+        The length of the KBPK must equal or greater than the key to be protected.
+        Must be 8, 16 or 24 DES key for versions A and C.
+        Must be 16 or 24 DES key for versions B.
+        Must be 16, 24 or 32 AES key for version D.
+    key_block : str
+        A TR-31 key block.
+
+    Returns
+    -------
+    header : Header
+        TR-31 key block header.
+    key : bytes
+        Unwrapped key.
+        A DES key for versions A, B and C.
+        An AES key for version D.
+
+    Raises
+    ------
+    KeyBlockError
+    HeaderError
+
+    Examples
+    --------
+    >>> import psec
+    >>> header, key = psec.tr31.unwrap(
+    ...     kbpk=b"\xAB" * 16,
+    ...     key_block="B0096P0TE00N0000471D4FBE35E5865BDE20DBF4C15503161F55D681170BF8DD14D01B6822EF8550CB67C569DE8AC048")
+    >>> key
+    b'\xcd\xcd\xcd\xcd\xcd\xcd\xcd\xcd\xcd\xcd\xcd\xcd\xcd\xcd\xcd\xcd'
+    >>> header.version_id
+    'B'
+    >>> header.key_usage
+    'P0'
+    >>> header.algorithm
+    'T'
+    >>> header.mode_of_use
+    'E'
+    >>> header.version_num
+    '00'
+    >>> header.exportability
+    'N'
+    """
+    kb = KeyBlock(kbpk)
+    return kb.header, kb.unwrap(key_block)
