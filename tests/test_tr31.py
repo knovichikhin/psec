@@ -554,6 +554,7 @@ def test_kb_unwrap_exceptions_unsupported_version() -> None:
     kb._unwrap_dispatch["B"] = save_b
     assert e.value.args[0] == "Key block version ID (B) is not supported."
 
+
 def test_wrap_unwrap_functions() -> None:
     kbpk = b"\xAB" * 16
     key = b"\xCD" * 16
