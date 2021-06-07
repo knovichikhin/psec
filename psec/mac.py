@@ -4,6 +4,7 @@ padding methods used in retail payments.
 See https://en.wikipedia.org/wiki/ISO/IEC_9797-1 for more information.
 """
 
+import enum as _enum
 from typing import Callable, Dict, Optional
 
 from cryptography.hazmat.backends import default_backend as _default_backend
@@ -11,6 +12,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher as _Cipher
 from cryptography.hazmat.primitives.ciphers import algorithms as _algorithms
 from cryptography.hazmat.primitives.ciphers import modes as _modes
 
+from psec import aes as _aes
 from psec import des as _des
 
 __all__ = [
@@ -24,17 +26,26 @@ __all__ = [
 _pad_dispatch: Dict[int, Callable[[bytes, Optional[int]], bytes]] = {}
 
 
+class Algorithm(_enum.Enum):
+    DES = _enum.auto()
+    AES = _enum.auto()
+
+
 def generate_cbc_mac(
-    key: bytes, data: bytes, padding: int, length: Optional[int] = None
+    key: bytes,
+    data: bytes,
+    padding: int,
+    length: Optional[int] = None,
+    algorithm: Optional[Algorithm] = None,
 ) -> bytes:
     r"""ISO/IEC 9797-1 MAC algorithm 1 aka CBC MAC.
-    All data blocks are processed using TDES CBC.
+    All data blocks are processed using TDES or AES CBC.
     The last block is the MAC.
 
     Parameters
     ----------
     key : bytes
-        Binary MAC key. Has to be a valid DES key.
+        Binary MAC key. Has to be a valid DES or AES key.
     data : bytes
         Data to be MAC'd.
     padding : int
@@ -45,7 +56,10 @@ def generate_cbc_mac(
             - 3 = ISO/IEC 9797-1 method 3.
 
     length : int, optional
-        Desired MAC length [4 <= N <= 8] (default 8 bytes).
+        For TDES desired MAC length [4 <= N <= 8] (defaults to 8).
+        For AES desired MAC length [4 <= N <= 16] (defaults to 16).
+    algorithm : Algorithm, optional
+        CBC MAC algorithm. Defaults to DES.
 
     Returns
     -------
@@ -76,15 +90,25 @@ def generate_cbc_mac(
     >>> psec.mac.generate_cbc_mac(key, data, padding=2).hex().upper()
     '925B1737EF681AD3'
     """
+    if algorithm is None:
+        algorithm = Algorithm.DES
+
+    if algorithm == Algorithm.AES:
+        block_size = 16
+        implementation = _aes.encrypt_aes_cbc
+    else:
+        block_size = 8
+        implementation = _des.encrypt_tdes_cbc
+
     if length is None:
-        length = 8
+        length = block_size
 
     try:
-        data = _pad_dispatch[padding](data, 8)
+        data = _pad_dispatch[padding](data, block_size)
     except KeyError:
         raise ValueError("Specify valid padding method: 1, 2 or 3.")
 
-    mac = _des.encrypt_tdes_cbc(key, b"\x00\x00\x00\x00\x00\x00\x00\x00", data)[-8:]
+    mac = implementation(key, b"\x00" * block_size, data)[-block_size:]
     return mac[:length]
 
 

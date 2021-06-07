@@ -1,11 +1,19 @@
 import secrets as _secrets
 import typing as _typing
 
+from psec import aes as _aes
 from psec import des as _des
 from psec import mac as _mac
 from psec import tools as _tools
 
-__all__ = ["KeyBlock", "KeyBlockError", "Header", "HeaderError"]
+__all__ = [
+    "KeyBlock",
+    "KeyBlockError",
+    "Header",
+    "HeaderError",
+    "wrap",
+    "unwrap",
+]
 
 
 class HeaderError(ValueError):
@@ -237,7 +245,7 @@ class Blocks(_typing.MutableMapping[str, str]):
 
 
 class Header:
-    """TR-31 header.
+    """TR-31 header. Supports versions A, B, C and D.
 
     Parameters
     ----------
@@ -542,7 +550,7 @@ class Header:
 
 
 class KeyBlock:
-    """TR-31 key block.
+    """TR-31 key block. Supports versions A, B, C and D.
 
     Parameters
     ----------
@@ -789,7 +797,7 @@ class KeyBlock:
         # Derive Key Block Encryption and Authentication Keys
         kbek, kbak = self._b_derive()
 
-        # Format key data: 2 byte key length measure in bits + key + pad
+        # Format key data: 2 byte key length measured in bits + key + pad
         pad = _secrets.token_bytes(6 + extra_pad)
         clear_key_data = (len(key) * 8).to_bytes(2, "big") + key + pad
 
@@ -839,6 +847,7 @@ class KeyBlock:
 
     def _b_derive(self) -> _typing.Tuple[bytes, bytes]:
         """Derive Key Block Encryption and Authentication Keys"""
+        # Key Derivation data
         # byte 0 = a counter increment for each block of kbpk, start at 1
         # byte 1-2 = key usage indicator
         #   - 0000 = encryption
@@ -852,27 +861,41 @@ class KeyBlock:
         #   - 00C0 = 3-Key TDES
         kd_input = bytearray(b"\x01\x00\x00\x00\x00\x00\x00\x80")
 
-        # Adjust for 3-key TDES
-        if len(self.kbpk) == 24:
+        if len(self.kbpk) == 16:
+            # Adjust for 2-key TDES
+            kd_input[4:6] = b"\x00\x00"
+            kd_input[6:8] = b"\x00\x80"
+            calls_to_cmac = [1, 2]
+        else:
+            # Adjust for 3-key TDES
             kd_input[4:6] = b"\x00\x01"
             kd_input[6:8] = b"\x00\xC0"
+            calls_to_cmac = [1, 2, 3]
 
         kbek = bytearray()  # encryption key
         kbak = bytearray()  # authentication key
 
         k1, _ = self._derive_des_cmac_subkey(self.kbpk)
 
-        for i in range(1, len(self.kbpk) // 8 + 1):
-            # Counter is incremented for each 8 byte block
+        # Produce the same number of keying material as the key's length.
+        # Each call to CMAC produces 64 bits of keying material.
+        # 2-key DES -> 2 calls to CMAC -> 2-key DES KBEK/KBAK
+        # 3-key DES -> 3 calls to CMAC -> 3-key DES KBEK/KBAK
+        for i in calls_to_cmac:
+            # Counter is incremented for each call to CMAC
             kd_input[0] = i
 
             # Encryption key
             kd_input[1:3] = b"\x00\x00"
-            kbek += _mac.generate_cbc_mac(self.kbpk, _tools.xor(kd_input, k1), 1)
+            kbek += _mac.generate_cbc_mac(
+                self.kbpk, _tools.xor(kd_input, k1), 1, 8, _mac.Algorithm.DES
+            )
 
             # Authentication key
             kd_input[1:3] = b"\x00\x01"
-            kbak += _mac.generate_cbc_mac(self.kbpk, _tools.xor(kd_input, k1), 1)
+            kbak += _mac.generate_cbc_mac(
+                self.kbpk, _tools.xor(kd_input, k1), 1, 8, _mac.Algorithm.DES
+            )
 
         return bytes(kbek), bytes(kbak)
 
@@ -881,7 +904,7 @@ class KeyBlock:
         km1, _ = self._derive_des_cmac_subkey(kbak)
         mac_data = header.encode("ascii") + key_data
         mac_data = mac_data[:-8] + _tools.xor(mac_data[-8:], km1)
-        mac = _mac.generate_cbc_mac(kbak, mac_data, 1)
+        mac = _mac.generate_cbc_mac(kbak, mac_data, 1, 8, _mac.Algorithm.DES)
         return mac
 
     def _derive_des_cmac_subkey(self, key: bytes) -> _typing.Tuple[bytes, bytes]:
@@ -933,7 +956,7 @@ class KeyBlock:
         # Derive Key Block Encryption and Authentication Keys
         kbek, kbak = self._c_derive()
 
-        # Format key data: 2 byte key length measure in bits + key + pad
+        # Format key data: 2 byte key length measured in bits + key + pad
         pad = _secrets.token_bytes(6 + extra_pad)
         clear_key_data = (len(key) * 8).to_bytes(2, "big") + key + pad
 
@@ -994,7 +1017,179 @@ class KeyBlock:
 
     def _c_generate_mac(self, kbak: bytes, header: str, key_data: bytes) -> bytes:
         """Generate MAC using KBAK"""
-        return _mac.generate_cbc_mac(kbak, header.encode("ascii") + key_data, 1, 4)
+        return _mac.generate_cbc_mac(
+            kbak, header.encode("ascii") + key_data, 1, 4, _mac.Algorithm.DES
+        )
+
+    # Versiond D
+
+    def _d_wrap(self, header: str, key: bytes, extra_pad: int) -> str:
+        """Wrap key into TR-31 key block version D"""
+
+        if len(self.kbpk) not in {16, 24, 32}:
+            raise KeyBlockError(
+                f"KBPK length ({str(len(self.kbpk))}) must be AES-128, AES-192 or AES-256."
+            )
+
+        if len(key) not in {16, 24, 32}:
+            raise KeyBlockError(
+                f"Key length ({str(len(key))}) must be AES-128, AES-192 or AES-25."
+            )
+
+        if len(key) > len(self.kbpk):
+            raise KeyBlockError(
+                f"Key length ({str(len(key))}) must be less than or equal to KBPK ({str(len(self.kbpk))})."
+            )
+
+        # Derive Key Block Encryption and Authentication Keys
+        kbek, kbak = self._d_derive()
+
+        # Format key data: 2 byte key length measured in bits + key + pad
+        pad_len = 16 - ((2 + len(key) + extra_pad) % 16)
+        pad = _secrets.token_bytes(pad_len)
+        clear_key_data = (len(key) * 8).to_bytes(2, "big") + key + pad
+
+        # Generate MAC
+        mac = self._d_generate_mac(kbak, header, clear_key_data)
+
+        # Encrypt key data
+        enc_key = _aes.encrypt_aes_cbc(kbek, mac, clear_key_data)
+
+        return header + enc_key.hex().upper() + mac.hex().upper()
+
+    def _d_unwrap(self, header: str, key_data: bytes, received_mac: bytes) -> bytes:
+        """Unwrap key from TR-31 key block version D"""
+
+        if len(self.kbpk) not in {16, 24, 32}:
+            raise KeyBlockError(
+                f"KBPK length ({str(len(self.kbpk))}) must be AES-128, AES-192 or AES-25."
+            )
+
+        if len(key_data) < 32 or len(key_data) % 16 != 0:
+            raise KeyBlockError(
+                f"Encrypted key is malformed. Key data: '{key_data.hex().upper()}'"
+            )
+
+        # Derive Key Block Encryption and Authentication Keys
+        kbek, kbak = self._d_derive()
+
+        # Decrypt key data
+        clear_key_data = _aes.decrypt_aes_cbc(kbek, received_mac, key_data)
+
+        # Validate MAC
+        mac = self._d_generate_mac(kbak, header, clear_key_data)
+        if mac != received_mac:
+            raise KeyBlockError(f"Key block MAC doesn't match generated MAC.")
+
+        # Extract key from key data: 2 byte key length measured in bits + key + pad
+        key_length = int.from_bytes(clear_key_data[0:2], "big")
+        if key_length not in {128, 192, 256}:
+            raise KeyBlockError(f"Decrypted key is invalid.")
+
+        key_length = key_length // 8
+        key = clear_key_data[2 : key_length + 2]
+        if len(key) != key_length:
+            raise KeyBlockError(f"Decrypted key is malformed.")
+
+        return key
+
+    def _d_derive(self) -> _typing.Tuple[bytes, bytes]:
+        """Derive Key Block Encryption and Authentication Keys"""
+        # Key Derivation data
+        # byte 0 = a counter increment for each block of kbpk, start at 1
+        # byte 1-2 = key usage indicator
+        #   - 0000 = encryption
+        #   - 0001 = MAC
+        # byte 3 = separator, set to 0
+        # byte 4-5 = algorithm indicator
+        #   - 0002 = AES-128
+        #   - 0003 = AES-192
+        #   - 0004 = AES-256
+        # byte 6-7 = key length in bits
+        #   - 0080 = AES-128
+        #   - 00C0 = AES-192
+        #   - 0100 = AES-256
+        kd_input = bytearray(
+            b"\x01\x00\x00\x00\x00\x00\x00\x80\x80\x00\x00\x00\x00\x00\x00\x00"
+        )
+
+        if len(self.kbpk) == 16:
+            # Adjust for AES 128 bit
+            kd_input[4:6] = b"\x00\x02"
+            kd_input[6:8] = b"\x00\x80"
+            calls_to_cmac = [1]
+        elif len(self.kbpk) == 24:
+            # Adjust for AES 192 bit
+            kd_input[4:6] = b"\x00\x03"
+            kd_input[6:8] = b"\x00\xC0"
+            calls_to_cmac = [1, 2]
+        else:
+            # Adjust for AES 256 bit
+            kd_input[4:6] = b"\x00\x04"
+            kd_input[6:8] = b"\x01\x00"
+            calls_to_cmac = [1, 2]
+
+        kbek = bytearray()  # encryption key
+        kbak = bytearray()  # authentication key
+
+        _, k2 = self._derive_aes_cmac_subkey(self.kbpk)
+
+        # Produce the same number of keying material as the key's length.
+        # Each call to CMAC produces 128 bits of keying material.
+        # AES-128 -> 1 call to CMAC  -> AES-128 KBEK/KBAK
+        # AES-196 -> 2 calls to CMAC -> AES-196 KBEK/KBAK (out of 256 bits of data)
+        # AES-256 -> 2 calls to CMAC -> AES-256 KBEK/KBAK
+        for i in calls_to_cmac:
+            # Counter is incremented for each call to CMAC
+            kd_input[0] = i
+
+            # Encryption key
+            kd_input[1:3] = b"\x00\x00"
+            kbek += _mac.generate_cbc_mac(
+                self.kbpk, _tools.xor(kd_input, k2), 1, 16, _mac.Algorithm.AES
+            )
+
+            # Authentication key
+            kd_input[1:3] = b"\x00\x01"
+            kbak += _mac.generate_cbc_mac(
+                self.kbpk, _tools.xor(kd_input, k2), 1, 16, _mac.Algorithm.AES
+            )
+
+        return bytes(kbek[: len(self.kbpk)]), bytes(kbak[: len(self.kbpk)])
+
+    def _d_generate_mac(self, kbak: bytes, header: str, key_data: bytes) -> bytes:
+        """Generate MAC using KBAK"""
+        km1, _ = self._derive_aes_cmac_subkey(kbak)
+        mac_data = header.encode("ascii") + key_data
+        mac_data = mac_data[:-16] + _tools.xor(mac_data[-16:], km1)
+        mac = _mac.generate_cbc_mac(kbak, mac_data, 1, 16, _mac.Algorithm.AES)
+        return mac
+
+    def _derive_aes_cmac_subkey(self, key: bytes) -> _typing.Tuple[bytes, bytes]:
+        """Derive two subkeys from an AES key. Each subkey is 16 bytes."""
+
+        def shift_left_1(in_bytes: bytes) -> bytes:
+            """Shift byte array left by 1 bit"""
+            in_bytes = bytearray(in_bytes)
+            in_bytes[0] = in_bytes[0] & 0b01111111
+            int_in = int.from_bytes(in_bytes, "big") << 1
+            return int.to_bytes(int_in, len(in_bytes), "big")
+
+        r64 = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x87"
+
+        s = _aes.encrypt_aes_ecb(key, b"\x00" * 16)
+
+        if s[0] & 0b10000000:
+            k1 = _tools.xor(shift_left_1(s), r64)
+        else:
+            k1 = shift_left_1(s)
+
+        if k1[0] & 0b10000000:
+            k2 = _tools.xor(shift_left_1(k1), r64)
+        else:
+            k2 = shift_left_1(k1)
+
+        return k1, k2
 
     _wrap_dispatch: _typing.Dict[
         str, _typing.Callable[["KeyBlock", str, bytes, int], str]
@@ -1002,6 +1197,7 @@ class KeyBlock:
         "A": _c_wrap,
         "B": _b_wrap,
         "C": _c_wrap,
+        "D": _d_wrap,
     }
 
     _unwrap_dispatch: _typing.Dict[
@@ -1010,6 +1206,7 @@ class KeyBlock:
         "A": _c_unwrap,
         "B": _b_unwrap,
         "C": _c_unwrap,
+        "D": _d_unwrap,
     }
 
 
@@ -1019,7 +1216,7 @@ def wrap(
     key: bytes,
     masked_key_len: _typing.Optional[int] = None,
 ) -> str:
-    r"""Wrap key into a TR-31 key block version A, B or C.
+    r"""Wrap key into a TR-31 key block version A, B, C or D.
 
     Parameters
     ----------
@@ -1068,7 +1265,7 @@ def wrap(
 
 
 def unwrap(kbpk: bytes, key_block: str) -> _typing.Tuple[Header, bytes]:
-    r"""Unwrap key from a TR-31 key block version A, B or C.
+    r"""Unwrap key from a TR-31 key block version A, B, C or D.
 
     Parameters
     ----------
