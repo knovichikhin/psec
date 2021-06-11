@@ -40,5 +40,5 @@ if __name__ == "__main__":
         ],
         classifiers=classifiers,
         python_requires=">=3.6",
-        keywords="payment security cvv cvd cvc mac iso9797 tdes",
+        keywords="payment security cvv cvd cvc mac iso9797 tdes aes tr31",
     )

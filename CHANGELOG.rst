@@ -1,3 +1,7 @@
+1.1.0 - 2021-06-28
+------------------
+- Added support for TR-31 key block. Specification version 2018.
+
 1.0.1 - 2021-02-28
 ------------------
 Removed leftover code from PVV generation.
