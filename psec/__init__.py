@@ -3,14 +3,14 @@ for retail payment transactions and cardholder authentication.
 
 psec modules:
 
+    - tr31 - TR-31 key block wrapping and unwrapping
     - aes - Advanced Encryption Standard
-    - cvv - Card Verification Value
     - des - Triple DES
+    - cvv - Card Verification Value
     - mac - Message Authentication Code
     - pin - Personal Identification Number
     - pinblock - PIN Blocks encoding and decoding
     - tools - Miscellaneous tools, such as xor.
-    - tr31 - TR-31 key block wrapping and unwrapping
 """
 
 __version__ = "1.1.0"

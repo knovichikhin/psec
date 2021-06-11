@@ -31,7 +31,7 @@ def test_header_blocks_dict() -> None:
     assert repr(h.blocks) == "{}"
 
 
-def test_header_load_optional() -> None:
+def test_header_load_optional_des() -> None:
     h = tr31.Header()
     assert h.load("B0000P0TE00N0100KS1800604B120F9292800000xxxxxxxx") == 40
     assert h.version_id == "B"
@@ -45,8 +45,23 @@ def test_header_load_optional() -> None:
     assert str(h) == "B0040P0TE00N0100KS1800604B120F9292800000"
 
 
-def test_header_load_optional_with_bad_count() -> None:
-    """One optional block is present, but number of optional blocks is 00"""
+def test_header_load_optional_aes() -> None:
+    h = tr31.Header()
+    assert h.load("D0000P0TE00N0100KS1800604B120F9292800000xxxxxxxx") == 40
+    assert h.version_id == "D"
+    assert h.key_usage == "P0"
+    assert h.algorithm == "T"
+    assert h.mode_of_use == "E"
+    assert h.exportability == "N"
+    assert h.reserved == "00"
+    assert len(h.blocks) == 1
+    assert h.blocks["KS"] == "00604B120F9292800000"
+    assert str(h) == "D0048P0TE00N0200KS1800604B120F9292800000PB080000"
+
+
+def test_header_load_optional_with_bad_count_des() -> None:
+    """One optional block is present, but number of optional blocks is 00.
+    Output header must be multiple of 8."""
     h = tr31.Header()
     assert h.load("B0000P0TE00N0000KS1800604B120F9292800000") == 16
     assert h.version_id == "B"
@@ -59,8 +74,23 @@ def test_header_load_optional_with_bad_count() -> None:
     assert str(h) == "B0016P0TE00N0000"
 
 
-def test_header_load_optional_padded() -> None:
-    """Two optional blocks are present, one is pad block"""
+def test_header_load_optional_with_bad_count_aes() -> None:
+    """One optional block is present, but number of optional blocks is 00.
+    Output header must be multiple of 16."""
+    h = tr31.Header()
+    assert h.load("D0000P0TE00N0000KS1800604B120F9292800000") == 16
+    assert h.version_id == "D"
+    assert h.key_usage == "P0"
+    assert h.algorithm == "T"
+    assert h.mode_of_use == "E"
+    assert h.exportability == "N"
+    assert h.reserved == "00"
+    assert len(h.blocks) == 0
+    assert str(h) == "D0016P0TE00N0000"
+
+
+def test_header_load_optional_padded_des() -> None:
+    """Two optional blocks are present, one is pad block. Output header must be multiple of 8."""
     h = tr31.Header()
     assert h.load("B0000P0TE00N0200KS1200604B120F9292PB0600") == 40
     assert h.version_id == "B"
@@ -74,8 +104,23 @@ def test_header_load_optional_padded() -> None:
     assert str(h) == "B0040P0TE00N0200KS1200604B120F9292PB0600"
 
 
-def test_header_load_optional_256() -> None:
-    """An optional block with length >255"""
+def test_header_load_optional_padded_aes() -> None:
+    """Two optional blocks are present, one is pad block. Output header must be multiple of 16."""
+    h = tr31.Header()
+    assert h.load("D0000P0TE00N0200KS1200604B120F9292PB0600") == 40
+    assert h.version_id == "D"
+    assert h.key_usage == "P0"
+    assert h.algorithm == "T"
+    assert h.mode_of_use == "E"
+    assert h.exportability == "N"
+    assert h.reserved == "00"
+    assert len(h.blocks) == 1
+    assert h.blocks["KS"] == "00604B120F9292"
+    assert str(h) == "D0048P0TE00N0200KS1200604B120F9292PB0E0000000000"
+
+
+def test_header_load_optional_256_des() -> None:
+    """An optional block with length >255. Output header must be multiple of 8."""
     h = tr31.Header()
     assert h.load("B0000P0TE00N0200KS0002010A" + "P" * 256 + "PB0600") == 288
     assert h.version_id == "B"
@@ -89,8 +134,24 @@ def test_header_load_optional_256() -> None:
     assert str(h) == "B0288P0TE00N0200KS0002010A" + "P" * 256 + "PB0600"
 
 
-def test_header_load_optional_extended_length() -> None:
-    """An optional block with extended length just because"""
+def test_header_load_optional_256_aes() -> None:
+    """An optional block with length >255. Output header must be multiple of 16."""
+    h = tr31.Header()
+    assert h.load("D0000P0TE00N0200KS0002010A" + "P" * 256 + "PB0600") == 288
+    assert h.version_id == "D"
+    assert h.key_usage == "P0"
+    assert h.algorithm == "T"
+    assert h.mode_of_use == "E"
+    assert h.exportability == "N"
+    assert h.reserved == "00"
+    assert len(h.blocks) == 1
+    assert h.blocks["KS"] == "P" * 256
+    assert str(h) == "D0288P0TE00N0200KS0002010A" + "P" * 256 + "PB0600"
+
+
+def test_header_load_optional_extended_length_des() -> None:
+    """An optional block with extended length where it's not necessary.
+    Output header must be multiple of 8."""
     h = tr31.Header()
     assert h.load("B0000P0TE00N0200KS00011600604B120F9292PB0A000000") == 48
     assert h.version_id == "B"
@@ -104,8 +165,25 @@ def test_header_load_optional_extended_length() -> None:
     assert str(h) == "B0040P0TE00N0200KS1200604B120F9292PB0600"
 
 
-def test_header_load_optional_multiple() -> None:
-    """Load multiple optional blocks"""
+def test_header_load_optional_extended_length_aes() -> None:
+    """An optional block with extended length where it's not necessary.
+    Output header must be multiple of 16."""
+    h = tr31.Header()
+    assert h.load("D0000P0TE00N0200KS00011600604B120F9292PB0A000000") == 48
+    assert h.version_id == "D"
+    assert h.key_usage == "P0"
+    assert h.algorithm == "T"
+    assert h.mode_of_use == "E"
+    assert h.exportability == "N"
+    assert h.reserved == "00"
+    assert len(h.blocks) == 1
+    assert h.blocks["KS"] == "00604B120F9292"
+    assert str(h) == "D0048P0TE00N0200KS1200604B120F9292PB0E0000000000"
+
+
+def test_header_load_optional_multiple_des() -> None:
+    """Load multiple optional blocks.
+    Output header must be multiple of 8."""
     h = tr31.Header()
     assert h.load("B0000P0TE00N0400KS1800604B120F9292800000T104T20600PB0600") == 56
     assert h.version_id == "B"
@@ -119,6 +197,24 @@ def test_header_load_optional_multiple() -> None:
     assert h.blocks["T1"] == ""
     assert h.blocks["T2"] == "00"
     assert str(h) == "B0056P0TE00N0400KS1800604B120F9292800000T104T20600PB0600"
+
+
+def test_header_load_optional_multiple_aes() -> None:
+    """Load multiple optional blocks.
+    Output header must be multiple of 16."""
+    h = tr31.Header()
+    assert h.load("D0000P0TE00N0400KS1800604B120F9292800000T104T20600PB0600") == 56
+    assert h.version_id == "D"
+    assert h.key_usage == "P0"
+    assert h.algorithm == "T"
+    assert h.mode_of_use == "E"
+    assert h.exportability == "N"
+    assert h.reserved == "00"
+    assert len(h.blocks) == 3
+    assert h.blocks["KS"] == "00604B120F9292800000"
+    assert h.blocks["T1"] == ""
+    assert h.blocks["T2"] == "00"
+    assert str(h) == "D0064P0TE00N0400KS1800604B120F9292800000T104T20600PB0E0000000000"
 
 
 def test_header_load_optional_reset() -> None:
@@ -304,7 +400,7 @@ def test_header_dump_exception_kb_too_large() -> None:
     h.blocks["T0"] = "P" * 9990
     with pytest.raises(tr31.HeaderError) as e:
         _ = h.dump(16)
-    assert e.value.args[0] == "Total key block length (10080) exceeds limit of 9992."
+    assert e.value.args[0] == "Total key block length (10080) exceeds limit of 9999."
 
 
 # fmt: off
@@ -328,6 +424,12 @@ def test_header_dump_exception_kb_too_large() -> None:
         ("C", b"A"*8+b"B"*8,        b"1"*8+b"2"*8),
         ("C", b"A"*8+b"B"*8,        b"1"*8),
         ("C", b"A"*8,               b"1"*8),
+        ("D", b"A"*16+b"B"*8+b"C"*8, b"1"*16+b"2"*8+b"3"*8),
+        ("D", b"A"*16+b"B"*8+b"C"*8, b"1"*16+b"2"*8),
+        ("D", b"A"*16+b"B"*8+b"C"*8, b"1"*16),
+        ("D", b"A"*16+b"B"*8,        b"1"*16+b"2"*8),
+        ("D", b"A"*16+b"B"*8,        b"1"*16),
+        ("D", b"A"*16,               b"1"*16),
     ],
 )
 # fmt: on
@@ -414,6 +516,21 @@ def test_kb_known_values(kbpk: str, key: str, kb: str) -> None:
         ("C", 24, 16,  0,   72),
         ("C", 24, 16, -8,   72),
         ("C", 24,  8,  8,   56),
+        ("D", 32, 32, 32,   144),
+        ("D", 32, 24, 32,   144),
+        ("D", 32, 16, 32,   144),
+        ("D", 32, 32, None, 144),
+        ("D", 32, 24, None, 144),
+        ("D", 32, 16, None, 144),
+        ("D", 32, 24, 24,   112),
+        ("D", 32, 24, 16,   112),
+        ("D", 32, 24,  8,   112),
+        ("D", 32, 24,  0,   112),
+        ("D", 32, 24, -1,   112),
+        ("D", 32, 16, 16,   112),
+        ("D", 32, 16,  8,   112),
+        ("D", 32, 16,  0,   112),
+        ("D", 32, 16, -1,   112),
     ],
 )
 # fmt: on
@@ -444,12 +561,17 @@ def test_kb_wrap_unsupported_kb_version() -> None:
         ("A",  7, 24, "KBPK length (7) must be 1-key, 2-key or 3-key TDES."),
         ("B",  7, 24, "KBPK length (7) must be 2-key or 3-key TDES."),
         ("C",  7, 24, "KBPK length (7) must be 1-key, 2-key or 3-key TDES."),
+        ("D", 17, 24, "KBPK length (17) must be AES-128, AES-192 or AES-256."),
+
         ("A", 16, 15, "Key length (15) must be 1-key, 2-key or 3-key TDES."),
         ("B", 16, 15, "Key length (15) must be 1-key, 2-key or 3-key TDES."),
         ("C", 16, 15, "Key length (15) must be 1-key, 2-key or 3-key TDES."),
+        ("D", 16, 15, "Key length (15) must be AES-128, AES-192 or AES-256."),
+
         ("A", 16, 24, "Key length (24) must be less than or equal to KBPK (16)."),
         ("B", 16, 24, "Key length (24) must be less than or equal to KBPK (16)."),
         ("C", 16, 24, "Key length (24) must be less than or equal to KBPK (16)."),
+        ("D", 16, 24, "Key length (24) must be less than or equal to KBPK (16)."),
     ],
 )
 # fmt: on
@@ -498,40 +620,50 @@ def test_kb_init_with_raw_header_blocks() -> None:
         (16, "B0040P0TE00N0000", "Key block header length (40) doesn't match input data length (16)."),
         (16, "BX040P0TE00N0000", "Key block header length (X040) is malformed. Expecting 4 digits."),
         (16, "A0087M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA", "Key block length (87) must be multiple of 8."),
+        (16, "D0087M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA", "Key block length (87) must be multiple of 16."),
 
         (16, "A0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBAX", "Key block MAC must be valid hexchars. MAC: '9AA5BBAX'"),
         (16, "B0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBAX", "Key block MAC must be valid hexchars. MAC: '468910379AA5BBAX'"),
         (16, "C0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBAX", "Key block MAC must be valid hexchars. MAC: '9AA5BBAX'"),
+        (16, "D0112P0AE00E0000DDF7B73888F22B757600010215895621B94A4E8DA57DD3E01BB66FF046A4E6B89B8F5C30BDD3A946205FDF791C3548EX", "Key block MAC must be valid hexchars. MAC: '9B8F5C30BDD3A946205FDF791C3548EX'"),
 
         (16, "A0024M3TC00E0100TT04BBA6", "Key block MAC is malformed. Received 4/8. MAC: 'BBA6'"),
         (16, "B0024M3TC00E00009AA5BBA6", "Key block MAC is malformed. Received 8/16. MAC: '9AA5BBA6'"),
         (16, "C0024M3TC00E0100TT04BBA6", "Key block MAC is malformed. Received 4/8. MAC: 'BBA6'"),
+        (16, "D0032P0AE00E0000205FDF791C3548EC", "Key block MAC is malformed. Received 16/32. MAC: '205FDF791C3548EC'"),
 
         (16, "A0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF3544689103X9AA5BBA6", "Encrypted key must be valid hexchars. Key data: '62C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF3544689103X'"),
         (16, "B0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF35X468910379AA5BBA6", "Encrypted key must be valid hexchars. Key data: '62C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF35X'"),
         (16, "C0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF3544689103X9AA5BBA6", "Encrypted key must be valid hexchars. Key data: '62C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF3544689103X'"),
+        (16, "D0112P0AE00E0000DDF7B73888F22B757600010215895621B94A4E8DA57DD3E01BB66FF046A4E6BX9B8F5C30BDD3A946205FDF791C3548EC", "Encrypted key must be valid hexchars. Key data: 'DDF7B73888F22B757600010215895621B94A4E8DA57DD3E01BB66FF046A4E6BX'"),
 
         (16, "A0024M3TC00E00009AA5BBA6", "Encrypted key is malformed. Key data: ''"),
         (16, "B0032M3TC00E0000FFFFFFFF9AA5BBA6", "Encrypted key is malformed. Key data: ''"),
         (16, "C0024M3TC00E00009AA5BBA6", "Encrypted key is malformed. Key data: ''"),
+        (16, "D0048P0AE00E00009B8F5C30BDD3A946205FDF791C3548EC", "Encrypted key is malformed. Key data: ''"),
 
         (16, "A0056M3TC00E0000BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB9AA5BBA6", "Key block MAC doesn't match generated MAC."),
         (16, "B0064M3TC00E0000BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBFFFFFFFF9AA5BBA6", "Key block MAC doesn't match generated MAC."),
         (16, "C0056M3TC00E0000BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB9AA5BBA6", "Key block MAC doesn't match generated MAC."),
+        (16, "D0112P0AE00E0000DDF7B73888F22B757600010215895621B94A4E8DA57DD3E01BB66FF046A4E6B89B8F5C30BDD3A946205FDF791C3548E4", "Key block MAC doesn't match generated MAC."),
 
         (7,  "A0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA6", "KBPK length (7) must be 1-key, 2-key or 3-key TDES."),
         (8,  "B0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA6", "KBPK length (8) must be 2-key or 3-key TDES."),
         (7,  "C0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA6", "KBPK length (7) must be 1-key, 2-key or 3-key TDES."),
+        (19, "D0112P0AE00E0000DDF7B73888F22B757600010215895621B94A4E8DA57DD3E01BB66FF046A4E6B89B8F5C30BDD3A946205FDF791C3548E4", "KBPK length (19) must be AES-128, AES-192 or AES-256."),
 
         # These keys have length set to 0 bits. KBPK must be b"E"*16.
         (16, "A0056M3TC00E0000ABE3EB7813FD4031BCBAEC1FCAB750BB920E4863", "Decrypted key is invalid."),
         (16, "B0064M3TC00E000013F1B06566ECAE897A6DF8C7AA651FCEF9480447EEEC9933", "Decrypted key is invalid."),
         (16, "C0056M3TC00E0000629D73329F5F42D868B2EB1E4C52D1E191BC1D3C", "Decrypted key is invalid."),
+        (16, "D0144P0AE00E0000B85C51F0152C2B2E89A2E7B30F71063F5F654F02D70001252B45CB9CA39B813E5297828F95A1242150DDCB0E8ECFBDC72B0B913476AC2CFF928D5807DD3A94E9", "Decrypted key is invalid."),
 
-        # These keys have length set to 128 bits where the key is 64 bits. KBPK must be b"E"*16.
+        # DES key length is set to 128 bits while the key is 64 bits. KBPK must be b"E"*16.
+        # AES key length is set to 256 bits while the key is 128 bits. KBPK must be b"E"*16.
         (16, "A0056M3TC00E0000EF14FD71CFCDCE0630AD5C1CDE0041DCF95CF1D0", "Decrypted key is malformed."),
         (16, "B0064M3TC00E00000398DC96A5DDB0EF61E26F8935173BD478DF9484050A672A", "Decrypted key is malformed."),
         (16, "C0056M3TC00E000001235EC22408B6CE866746FF992B8707FD7A26D2", "Decrypted key is malformed."),
+        (16, "D0112P0AE00E00000DC02E4C2B63120403CC732FB1B17E6D44138E7C341AE7368DEAD6FB4673F25ECFD803F1101F701A7FE8BD3516D3D1BF", "Decrypted key is malformed."),
     ],
 )
 # fmt: on

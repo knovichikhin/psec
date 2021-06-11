@@ -11,6 +11,7 @@ Install:
 
 ``psec`` consists of the following modules:
 
+- tr31 - TR-31 key block wrapping and unwrapping
 - cvv - Card Verification Value generation
 - des - Triple DES utilities
 - mac - Message Authentication Code generation

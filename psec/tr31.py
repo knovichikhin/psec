@@ -1,4 +1,374 @@
-import secrets as _secrets
+r"""TR-31 2018
+
+Wrap/Unwrap
+~~~~~~~~~~~
+
+This module provides two convenient functions to wrap and unwrap TR-31 key block.
+
+To wrap a key into TR-31 key block::
+
+    >>> import psec
+    >>> psec.tr31.wrap(
+    ...     kbpk=b"FFFFFFFFEEEEEEEE",
+    ...     header="B0000P0TE00N0000",
+    ...     key=b"CCCCCCCCDDDDDDDD")  # doctest: +SKIP
+    'B0096P0TE00N0000A800A7D1A4C0C1BE762177E1CC59D84844EB67C9F6432B2CA34187AE2E0385EBEE2231697BC5DAE8'
+
+To unwrap a key from TR-31 key block::
+
+    >>> import psec
+    >>> header, key = psec.tr31.unwrap(
+    ...     kbpk=b"FFFFFFFFEEEEEEEE",
+    ...     key_block="B0096P0TE00N0000A800A7D1A4C0C1BE762177E1CC59D84844EB67C9F6432B2CA34187AE2E0385EBEE2231697BC5DAE8")
+    >>> key
+    b'CCCCCCCCDDDDDDDD'
+
+Alternativelly, KeyBlock class can be used to achieve the same thing::
+
+    >>> import psec
+    >>> kb = psec.tr31.KeyBlock(kbpk=b"FFFFFFFFEEEEEEEE", header="B0000P0TE00N0000")
+    >>> kb.wrap(key=b"CCCCCCCCDDDDDDDD")  # doctest: +SKIP
+    'B0096P0TE00N00001BB4881919DA54DEB9BB1D340783BBD431A03A9BC577662C80F2EF9F95940EBD35C29B94C4BC0CCF'
+    >>> kb.unwrap(key_block="B0096P0TE00N00001BB4881919DA54DEB9BB1D340783BBD431A03A9BC577662C80F2EF9F95940EBD35C29B94C4BC0CCF")
+    b'CCCCCCCCDDDDDDDD'
+
+Header
+~~~~~~
+
+TR-31 header is parsed and verified when KeyBlock class is instanciated
+with an input header and when KeyBlock unwraps a raw TR-31 key block.
+
+    >>> import psec
+    >>> kb = psec.tr31.KeyBlock(kbpk=b"FFFFFFFFEEEEEEEE", header="B0000P0TE00N0100KS1800604B120F9292800000")
+    >>> kb.header.version_id
+    'B'
+    >>> kb.header.key_usage
+    'P0'
+    >>> kb.header.algorithm
+    'T'
+    >>> kb.header.mode_of_use
+    'E'
+    >>> kb.header.version_num
+    '00'
+    >>> kb.header.exportability
+    'N'
+    >>> kb.header.blocks["KS"]
+    '00604B120F9292800000'
+
+And when this KeyBlock wraps a key it will use this exact header.
+
+    >>> import psec
+    >>> kb = psec.tr31.KeyBlock(kbpk=b"FFFFFFFFEEEEEEEE", header="B0000P0TE00N0100KS1800604B120F9292800000")
+    >>> kb.wrap(key=b'CCCCCCCCDDDDDDDD')  # doctest: +SKIP
+    'B0120P0TE00N0100KS1800604B120F92928000001D97E1A8BE3F9ABA19B1BBC382D22CED362727320CEC3EFABF4DC3CDEC8B5026771FFE9FEB2C525B'
+
+Header Properties
+~~~~~~~~~~~~~~~~~
+
+This library does NOT enforce or verify key block key usage, algorithm,
+mode of use and so on except for the format requirements.
+
+This library DOES make sure that provided key block header belongs to the key
+block and is not substituted. And upon successful validation/unwrapping it
+provides parsed key block header properties.
+
+These properties, such as key usage, algorithm, mode of use and so on, can then
+be ignored or enforced as a separate step.
+
+The following sections go into details on what key usage, algorithm and so on
+are formally allowed by the specification.
+
+Header Properties - Version ID
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++-------+-------------------------------------------------------------------+-----------+
+| Value | Description                                                       | Algorithm |
++=======+===================================================================+===========+
+| 'A'   | Key block protected using the Key Variant Binding Method.         | DES       |
+|       | This version is deprecated.                                       |           |
++-------+-------------------------------------------------------------------+-----------+
+| 'B'   | Key block protected using the TDES Key Derivation Binding Method. | DES       |
+|       | Recommended over versions 'A' and 'C' for new implementations.    |           |
++-------+-------------------------------------------------------------------+-----------+
+| 'C'   | Key block protected using the TDES Key Variant Binding Method.    | DES       |
+|       | Same as 'A' with some header value clarifications.                |           |
++-------+-------------------------------------------------------------------+-----------+
+| 'D'   | Key block protected using the AES Key Derivation Binding Method.  | AES       |
++-------+-------------------------------------------------------------------+-----------+
+
+Numeric version IDs are reserved for proprietary key block definitions.
+This library supports only version IDs A, B, C and D.
+
+Header Properties - Key Usage
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Key usage defines the type of key.
+For example, a PIN encryption key or EMV Secure Messaging for Integrity key.
+
++-------+------------------------------------------------------+----------------+
+| Value | Description                                          | Mode of Use    |
++=======+======================================================+================+
+| 'B0'  | BDK Base Derivation Key                              | 'X'            |
++-------+------------------------------------------------------+----------------+
+| 'B1'  | Initial DUKPT Key                                    | 'X'            |
++-------+------------------------------------------------------+----------------+
+| 'B2'  | Base Key Variant Key                                 | 'X'            |
++-------+------------------------------------------------------+----------------+
+| 'C0'  | CVK Card Verification Key                            | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'D0'  | Symmetric Key for Data Encryption                    | 'B', 'D', 'E'  |
++-------+------------------------------------------------------+----------------+
+| 'D1'  | Asymmetric Key for Data Encryption                   | 'B', 'D', 'E'  |
++-------+------------------------------------------------------+----------------+
+| 'D2'  | Data Encryption Key for Decimalization Table         | 'B', 'D', 'E'  |
++-------+------------------------------------------------------+----------------+
+| 'E0'  | EMV/chip Issuer Master Key: Application cryptograms  | 'X'            |
++-------+------------------------------------------------------+----------------+
+| 'E1'  | EMV/chip Issuer Master Key: Secure Messaging for     | 'X'            |
+|       | Confidentiality                                      |                |
++-------+------------------------------------------------------+----------------+
+| 'E2'  | EMV/chip Issuer Master Key: Secure Messaging for     | 'X'            |
+|       | Integrity                                            |                |
++-------+------------------------------------------------------+----------------+
+| 'E3'  | EMV/chip Issuer Master Key: Data Authentication Code | 'X'            |
++-------+------------------------------------------------------+----------------+
+| 'E4'  | EMV/chip Issuer Master Key: Dynamic Numbers          | 'X'            |
++-------+------------------------------------------------------+----------------+
+| 'E5'  | EMV/chip Issuer Master Key: Card Personalization     | 'X'            |
++-------+------------------------------------------------------+----------------+
+| 'E6'  | EMV/chip Issuer Master Key: Other                    | 'X'            |
++-------+------------------------------------------------------+----------------+
+| 'I0'  | Initialization Vector (IV)                           | 'N'            |
++-------+------------------------------------------------------+----------------+
+| 'K0'  | Key Encryption or wrapping                           | 'B', 'D', 'E'  |
++-------+------------------------------------------------------+----------------+
+| 'K1'  | TR-31 Key Block Protection Key                       | 'B', 'D', 'E'  |
++-------+------------------------------------------------------+----------------+
+| 'K2'  | TR-34 Asymmetric key                                 | 'B', 'D', 'E'  |
++-------+------------------------------------------------------+----------------+
+| 'K3'  | Asymmetric key for key agreement/key wrapping        | 'B', 'D', 'E', |
+|       |                                                      | 'X'            |
++-------+------------------------------------------------------+----------------+
+| 'M0'  | ISO 16609 MAC algorithm 1 (using TDEA)               | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'M1'  | ISO 9797-1 MAC Algorithm 1                           | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'M2'  | ISO 9797-1 MAC Algorithm 2                           | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'M3'  | ISO 9797-1 MAC Algorithm 3                           | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'M4'  | ISO 9797-1 MAC Algorithm 4                           | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'M5'  | ISO 9797-1:1999 MAC Algorithm 5                      | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'M6'  | ISO 9797-1:2011 MAC Algorithm 5/CMAC                 | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'M7'  | HMAC                                                 | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'M8'  | ISO 9797-1:2011 MAC Algorithm 6                      | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'P0'  | PIN Encryption                                       | 'B', 'D', 'E'  |
++-------+------------------------------------------------------+----------------+
+| 'S0'  | Asymmetric key pair for digital signature            | 'S', 'V'       |
++-------+------------------------------------------------------+----------------+
+| 'S1'  | Asymmetric key pair, CA key                          | 'S', 'V'       |
++-------+------------------------------------------------------+----------------+
+| 'S2'  | Asymmetric key pair, non-X9.24 key                   | 'S', 'V', 'T', |
+|       |                                                      | 'B', 'D', 'E'  |
++-------+------------------------------------------------------+----------------+
+| 'V0'  | PIN verification, KPV, other algorithm               | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'V1'  | PIN verification, IBM 3624                           | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'V2'  | PIN Verification, VISA PVV                           | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'V3'  | PIN Verification, X9.132 algorithm 1                 | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+| 'V4'  | PIN Verification, X9.132 algorithm 2                 | 'C', 'G', 'V'  |
++-------+------------------------------------------------------+----------------+
+
+Numeric key usage values are reserved for proprietary use.
+
+Header Properties - Algorithm
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Algorithm defines what algorithms can be used with the key.
+
++-------+----------------------------------------------------------------+
+| Value | Definition                                                     |
++=======+================================================================+
+| 'A'   | AES                                                            |
++-------+----------------------------------------------------------------+
+| 'D'   | DES (included for backwards compatibility)                     |
++-------+----------------------------------------------------------------+
+| 'E'   | Elliptic Curve                                                 |
++-------+----------------------------------------------------------------+
+| 'H'   | HMAC (specify the underlying hash algorithm in optional block) |
++-------+----------------------------------------------------------------+
+| 'R'   | RSA                                                            |
++-------+----------------------------------------------------------------+
+| 'S'   | DSA                                                            |
++-------+----------------------------------------------------------------+
+| 'T'   | Triple DES (TDES)                                              |
++-------+----------------------------------------------------------------+
+
+Numeric algorithm values are reserved for proprietary use.
+
+Header Properties - Mode of Use
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Mode of use defines what operation the key can perform.
+
++-------+----------------------------------------+
+| Value | Definition                             |
++=======+========================================+
+| 'B'   | Both Encrypt & Decrypt / Wrap & Unwrap |
++-------+----------------------------------------+
+| 'C'   | Both Generate & Verify                 |
++-------+----------------------------------------+
+| 'E'   | Encrypt / Wrap Only                    |
++-------+----------------------------------------+
+| 'G'   | Generate Only                          |
++-------+----------------------------------------+
+| 'N'   | No special restrictions other than     |
+|       | restrictions implied by the Key Usage  |
++-------+----------------------------------------+
+| 'S'   | Signature Only                         |
++-------+----------------------------------------+
+| 'T'   | Both Sign & Decrypt                    |
++-------+----------------------------------------+
+| 'V'   | Verify Only                            |
++-------+----------------------------------------+
+| 'X'   | Key used to derive other key(s)        |
++-------+----------------------------------------+
+| 'Y'   | Key used to create key variants        |
++-------+----------------------------------------+
+
+Numeric mode of use values are reserved for proprietary use.
+
+Header Properties - Key Version Number
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Not to be confused with version ID.
+
+Key version number can be used to:
+
+    * Prevent re-injection of old keys
+    * Specify that value carried in the key block is a component of a key.
+
++-----------+-----------+--------------------------------------------------------------+
+| First     | Second    | Meaning                                                      |
+| Character | Character |                                                              |
++===========+===========+==============================================================+
+| '0'       | '0'       | Key versioning is not used for this key.                     |
++-----------+-----------+--------------------------------------------------------------+
+| 'c'       | Any       | The value carried in this key block is a component of a key. |
+|           |           | Local rules will dictate the proper use of a component       |
++-----------+-----------+--------------------------------------------------------------+
+| Any other combination | The key version field indicates the version of the key       |
+|                       | carried in the key block. The value may optionally be used   |
+|                       | to prevent re-injection of old keys.                         |
++-----------------------+--------------------------------------------------------------+
+
+Header Properties - Exportability
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Exportability refers to transfer outside the cryptographic domain
+in which the key is found.
+
++-------+-------------------------------------------+
+| Value | Definition                                |
++=======+===========================================+
+| 'E'   | Exportable under trusted key              |
++-------+-------------------------------------------+
+| 'N'   | Not exportable                            |
++-------+-------------------------------------------+
+| 'S'   | Sensitive, exportable under untrusted key |
++-------+-------------------------------------------+
+
+Numeric exportability values are reserved for proprietary use.
+
+Header Properties - Conclusion
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Let's create a key block for:
+
+    * a TDES PIN encryption key
+    * that can be used for encryption only
+    * that does not have any versioning
+    * that is not exportable
+
+    >>> import psec
+    >>> header = psec.tr31.Header(
+    ...     version_id="B",     # Version B as recommended for TDES
+    ...     key_usage="P0",     # PIN Encryption
+    ...     algorithm="T",      # TDES
+    ...     mode_of_use="E",    # Encryption only
+    ...     version_num="00",   # No version
+    ...     exportability="N"   # Not exportable
+    ... )
+    >>> kb = psec.tr31.KeyBlock(kbpk=b"FFFFFFFFEEEEEEEE", header=header)
+    >>> kb.wrap(key=b"CCCCCCCCDDDDDDDD")  # doctest: +SKIP
+    'B0096P0TE00N0000C805321ACF492D2256C3220BE81D542AC8B1DAC9AA30BD7B94E4185F8473A005CB8BD9C7812EAD16'
+    >>> str(kb.header)
+    'B0016P0TE00N0000'
+
+Let's create another key block for:
+
+    * an AES MAC key (ISO 9797-1 MAC Algorithm 3)
+    * that can be used for MAC generation and verification
+    * that does not have any versioning
+    * that is not exportable
+
+    >>> import psec
+    >>> header = psec.tr31.Header(
+    ...     version_id="D",     # Version D is for AES
+    ...     key_usage="M3",     # PIN Encryption
+    ...     algorithm="A",      # AES
+    ...     mode_of_use="C",    # Both Generate & Verify
+    ...     version_num="00",   # No version
+    ...     exportability="N"   # Not exportable
+    ... )
+    >>> kb = psec.tr31.KeyBlock(kbpk=b"FFFFFFFFEEEEEEEE", header=header)
+    >>> kb.wrap(key=b"CCCCCCCCDDDDDDDD")  # doctest: +SKIP
+    'D0144M3AC00N00008C1CB96C82BFFB2DFA31216647B06D3EC65375F9EC676ADD47B949551E5EC3A82873D6C65C963789119B4A90E7446EA04A4861D4688759EAB83C8D59FEF3DAD1'
+    >>> str(kb.header)
+    'D0016M3AC00N0000'
+
+Optional Blocks
+~~~~~~~~~~~~~~~
+
+This library support encoding and decoding of optional blocks.
+However, it does not verify or enforce block IDs and their contents.
+
+To add an optional block to the header, add a new key to blocks dictionary
+inside header:
+
+    >>> import psec
+    >>> header = psec.tr31.Header(
+    ...     version_id="B",     # Version B as recommended for TDES
+    ...     key_usage="P0",     # PIN Encryption
+    ...     algorithm="T",      # TDES
+    ...     mode_of_use="E",    # Encryption only
+    ...     version_num="00",   # No version
+    ...     exportability="N"   # Not exportable
+    ... )
+    >>> header.blocks["TT"] = "HelloWorld"
+    >>> kb = psec.tr31.KeyBlock(kbpk=b"FFFFFFFFEEEEEEEE", header=header)
+    >>> kb.wrap(key=b"CCCCCCCCDDDDDDDD")  # doctest: +SKIP
+    'B0120P0TE00N0200TT0EHelloWorldPB0A0000008FE0CA0F00BAA9A1E3695A6C051FAB695FCE07E289BC0151D096909BB87670F63238670402E90A37'
+    >>> kb.header.blocks["TT"]
+    'HelloWorld'
+    >>> str(kb.header)
+    'B0040P0TE00N0200TT0EHelloWorldPB0A000000'
+
+Similarly, to access optional block, access blocks dictionary inside header:
+
+    >>> import psec
+    >>> kb = psec.tr31.KeyBlock(kbpk=b"FFFFFFFFEEEEEEEE")
+    >>> kb.unwrap(key_block="B0120P0TE00N0200TT0EHelloWorldPB0A0000008FE0CA0F00BAA9A1E3695A6C051FAB695FCE07E289BC0151D096909BB87670F63238670402E90A37")
+    b'CCCCCCCCDDDDDDDD'
+    >>> kb.header.blocks["TT"]
+    'HelloWorld'
+    >>> str(kb.header)
+    'B0040P0TE00N0200TT0EHelloWorldPB0A000000'
+"""
+
+from os import urandom as _urandom
 import typing as _typing
 
 from psec import aes as _aes
@@ -476,9 +846,9 @@ class Header:
             + len(blocks)
         )
 
-        if kb_len > 9992:
+        if kb_len > 9999:
             raise HeaderError(
-                f"Total key block length ({str(kb_len)}) exceeds limit of 9992."
+                f"Total key block length ({str(kb_len)}) exceeds limit of 9999."
             )
 
         return (
@@ -579,6 +949,7 @@ class KeyBlock:
     """
 
     _algo_mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
+    _algo_block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
     _algo_max_key_len = {"A": 24, "B": 24, "C": 24, "D": 32}
 
     def __init__(
@@ -732,9 +1103,10 @@ class KeyBlock:
                 f"doesn't match input data length ({str(len(key_block))})."
             )
 
-        if len(key_block) % 8 != 0:
+        if len(key_block) % self._algo_block_size[self.header.version_id] != 0:
             raise KeyBlockError(
-                f"Key block length ({str(len(key_block))}) must be multiple of 8."
+                f"Key block length ({str(len(key_block))}) must be multiple of "
+                f"{str(self._algo_block_size[self.header.version_id])}."
             )
 
         # Extract MAC from the key block.
@@ -798,7 +1170,7 @@ class KeyBlock:
         kbek, kbak = self._b_derive()
 
         # Format key data: 2 byte key length measured in bits + key + pad
-        pad = _secrets.token_bytes(6 + extra_pad)
+        pad = _urandom(6 + extra_pad)
         clear_key_data = (len(key) * 8).to_bytes(2, "big") + key + pad
 
         # Generate MAC
@@ -957,7 +1329,7 @@ class KeyBlock:
         kbek, kbak = self._c_derive()
 
         # Format key data: 2 byte key length measured in bits + key + pad
-        pad = _secrets.token_bytes(6 + extra_pad)
+        pad = _urandom(6 + extra_pad)
         clear_key_data = (len(key) * 8).to_bytes(2, "big") + key + pad
 
         # Encrypt key data
@@ -1033,7 +1405,7 @@ class KeyBlock:
 
         if len(key) not in {16, 24, 32}:
             raise KeyBlockError(
-                f"Key length ({str(len(key))}) must be AES-128, AES-192 or AES-25."
+                f"Key length ({str(len(key))}) must be AES-128, AES-192 or AES-256."
             )
 
         if len(key) > len(self.kbpk):
@@ -1046,7 +1418,7 @@ class KeyBlock:
 
         # Format key data: 2 byte key length measured in bits + key + pad
         pad_len = 16 - ((2 + len(key) + extra_pad) % 16)
-        pad = _secrets.token_bytes(pad_len)
+        pad = _urandom(pad_len + extra_pad)
         clear_key_data = (len(key) * 8).to_bytes(2, "big") + key + pad
 
         # Generate MAC
@@ -1062,7 +1434,7 @@ class KeyBlock:
 
         if len(self.kbpk) not in {16, 24, 32}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be AES-128, AES-192 or AES-25."
+                f"KBPK length ({str(len(self.kbpk))}) must be AES-128, AES-192 or AES-256."
             )
 
         if len(key_data) < 32 or len(key_data) % 16 != 0:
@@ -1110,7 +1482,7 @@ class KeyBlock:
         #   - 00C0 = AES-192
         #   - 0100 = AES-256
         kd_input = bytearray(
-            b"\x01\x00\x00\x00\x00\x00\x00\x80\x80\x00\x00\x00\x00\x00\x00\x00"
+            b"\x01\x00\x00\x00\x00\x02\x00\x80\x80\x00\x00\x00\x00\x00\x00\x00"
         )
 
         if len(self.kbpk) == 16:

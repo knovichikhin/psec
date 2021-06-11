@@ -33,6 +33,7 @@ def encrypt_aes_cbc(key: bytes, iv: bytes, data: bytes) -> bytes:
     Raises
     ------
     ValueError
+        Data length must be multiple of AES block size 16.
 
     Examples
     --------
@@ -75,6 +76,7 @@ def encrypt_aes_ecb(key: bytes, data: bytes) -> bytes:
     Raises
     ------
     ValueError
+        Data length must be multiple of AES block size 16.
 
     Examples
     --------
@@ -116,6 +118,7 @@ def decrypt_aes_cbc(key: bytes, iv: bytes, data: bytes) -> bytes:
     Raises
     ------
     ValueError
+        Data length must be multiple of AES block size 16.
 
     Examples
     --------
@@ -158,14 +161,14 @@ def decrypt_aes_ecb(key: bytes, data: bytes) -> bytes:
     Raises
     ------
     ValueError
+        Data length must be multiple of AES block size 16.
 
     Examples
     --------
     >>> import psec
     >>> key = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
-    >>> iv = bytes.fromhex("00000000000000000000000000000000")
-    >>> cipher_text = bytes.fromhex("592373540AE1B202615E6D210D868A8C6593A91B63F201B28860C4DE39375EB4")
-    >>> psec.aes.decrypt_aes_cbc(key, iv, cipher_text).hex().upper()
+    >>> cipher_text = bytes.fromhex("592373540AE1B202615E6D210D868A8C592373540AE1B202615E6D210D868A8C")
+    >>> psec.aes.decrypt_aes_ecb(key, cipher_text).hex().upper()
     'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
     """
     if len(data) < 16 or len(data) % 16 != 0:
