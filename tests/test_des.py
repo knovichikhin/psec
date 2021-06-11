@@ -34,3 +34,43 @@ def test_key_variant_exceptions(key: bytes, variant: int, error: str) -> None:
 def test_key_variant(key: str, variant: int, key_variant: str) -> None:
     result = psec.des.apply_key_variant(bytes.fromhex(key), variant)
     assert result.hex().upper() == key_variant
+
+
+def test_encrypt_des_cbc_exception() -> None:
+    with pytest.raises(ValueError) as e:
+        psec.des.encrypt_tdes_cbc(b"1" * 16, b"0" * 16, b"")
+    assert e.value.args[0] == "Data length (0) must be multiple of DES block size 8."
+
+    with pytest.raises(ValueError) as e:
+        psec.des.encrypt_tdes_cbc(b"1" * 16, b"0" * 16, b"2" * 17)
+    assert e.value.args[0] == "Data length (17) must be multiple of DES block size 8."
+
+
+def test_decrypt_des_cbc_exception() -> None:
+    with pytest.raises(ValueError) as e:
+        psec.des.decrypt_tdes_cbc(b"1" * 16, b"0" * 16, b"")
+    assert e.value.args[0] == "Data length (0) must be multiple of DES block size 8."
+
+    with pytest.raises(ValueError) as e:
+        psec.des.decrypt_tdes_cbc(b"1" * 16, b"0" * 16, b"2" * 17)
+    assert e.value.args[0] == "Data length (17) must be multiple of DES block size 8."
+
+
+def test_encrypt_des_ecb_exception() -> None:
+    with pytest.raises(ValueError) as e:
+        psec.des.encrypt_tdes_ecb(b"1" * 16, b"")
+    assert e.value.args[0] == "Data length (0) must be multiple of DES block size 8."
+
+    with pytest.raises(ValueError) as e:
+        psec.des.encrypt_tdes_ecb(b"1" * 16, b"2" * 17)
+    assert e.value.args[0] == "Data length (17) must be multiple of DES block size 8."
+
+
+def test_decrypt_des_ecb_exception() -> None:
+    with pytest.raises(ValueError) as e:
+        psec.des.decrypt_tdes_ecb(b"1" * 16, b"")
+    assert e.value.args[0] == "Data length (0) must be multiple of DES block size 8."
+
+    with pytest.raises(ValueError) as e:
+        psec.des.decrypt_tdes_ecb(b"1" * 16, b"2" * 17)
+    assert e.value.args[0] == "Data length (17) must be multiple of DES block size 8."

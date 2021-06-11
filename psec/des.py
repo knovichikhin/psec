@@ -1,4 +1,4 @@
-from typing import Union
+import typing as _typing
 
 from cryptography.hazmat.backends import default_backend as _default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher as _Cipher
@@ -18,7 +18,7 @@ __all__ = [
 ]
 
 
-def apply_key_variant(key: Union[bytes, bytearray], variant: int) -> bytes:
+def apply_key_variant(key: _typing.Union[bytes, bytearray], variant: int) -> bytes:
     r"""Apply variant to the most significant byte of each DES key pair.
 
     Parameters
@@ -57,7 +57,7 @@ def apply_key_variant(key: Union[bytes, bytearray], variant: int) -> bytes:
     return _tools.xor(key, mask)
 
 
-def adjust_key_parity(key: Union[bytes, bytearray]) -> bytes:
+def adjust_key_parity(key: _typing.Union[bytes, bytearray]) -> bytes:
     r"""Adjust DES key parity key
 
     Parameters
@@ -124,13 +124,20 @@ def encrypt_tdes_cbc(key: bytes, iv: bytes, data: bytes) -> bytes:
         Binary Triple DES key. Has to be a valid DES key.
     iv : bytes
         Binary initial initialization vector for CBC.
+        Has to be 8 bytes long.
     data : bytes
         Binary data to be encrypted.
+        Has to be multiple of 8 bytes.
 
     Returns
     -------
     encrypted_data : bytes
         Binary encrypted data.
+
+    Raises
+    ------
+    ValueError
+        Data length must be multiple of DES block size 8.
 
     Examples
     --------
@@ -140,6 +147,11 @@ def encrypt_tdes_cbc(key: bytes, iv: bytes, data: bytes) -> bytes:
     >>> psec.des.encrypt_tdes_cbc(key, iv, b"12345678").hex().upper()
     '41D2FFBA3CDC15FE'
     """
+    if len(data) < 8 or len(data) % 8 != 0:
+        raise ValueError(
+            f"Data length ({str(len(data))}) must be multiple of DES block size 8."
+        )
+
     cipher = _Cipher(
         _algorithms.TripleDES(key),
         _modes.CBC(iv),
@@ -157,11 +169,17 @@ def encrypt_tdes_ecb(key: bytes, data: bytes) -> bytes:
         Binary Triple DES key. Has to be a valid DES key.
     data : bytes
         Binary data to be encrypted.
+        Has to be multiple of 8 bytes.
 
     Returns
     -------
     encrypted_data : bytes
         Binary encrypted data.
+
+    Raises
+    ------
+    ValueError
+        Data length must be multiple of DES block size 8.
 
     Examples
     --------
@@ -170,6 +188,11 @@ def encrypt_tdes_ecb(key: bytes, data: bytes) -> bytes:
     >>> psec.des.encrypt_tdes_ecb(key, b"12345678").hex().upper()
     '41D2FFBA3CDC15FE'
     """
+    if len(data) < 8 or len(data) % 8 != 0:
+        raise ValueError(
+            f"Data length ({str(len(data))}) must be multiple of DES block size 8."
+        )
+
     cipher = _Cipher(
         _algorithms.TripleDES(key), _modes.ECB(), backend=_default_backend()
     )
@@ -185,13 +208,20 @@ def decrypt_tdes_cbc(key: bytes, iv: bytes, data: bytes) -> bytes:
         Binary Triple DES key. Has to be a valid DES key.
     iv : bytes
         Binary initial initialization vector for CBC.
+        Has to be 8 bytes long.
     data : bytes
         Binary data to be decrypted.
+        Has to be multiple of 8 bytes.
 
     Returns
     -------
     decrypted_data : bytes
         Binary decrypted data.
+
+    Raises
+    ------
+    ValueError
+        Data length must be multiple of DES block size 8.
 
     Examples
     --------
@@ -201,6 +231,11 @@ def decrypt_tdes_cbc(key: bytes, iv: bytes, data: bytes) -> bytes:
     >>> psec.des.decrypt_tdes_cbc(key, iv, bytes.fromhex("41D2FFBA3CDC15FE"))
     b'12345678'
     """
+    if len(data) < 8 or len(data) % 8 != 0:
+        raise ValueError(
+            f"Data length ({str(len(data))}) must be multiple of DES block size 8."
+        )
+
     cipher = _Cipher(
         _algorithms.TripleDES(key),
         _modes.CBC(iv),
@@ -218,11 +253,17 @@ def decrypt_tdes_ecb(key: bytes, data: bytes) -> bytes:
         Binary Triple DES key. Has to be a valid DES key.
     data : bytes
         Binary data to be decrypted.
+        Has to be multiple of 8 bytes.
 
     Returns
     -------
     decrypted_data : bytes
         Binary decrypted data.
+
+    Raises
+    ------
+    ValueError
+        Data length must be multiple of DES block size 8.
 
     Examples
     --------
@@ -231,6 +272,11 @@ def decrypt_tdes_ecb(key: bytes, data: bytes) -> bytes:
     >>> psec.des.decrypt_tdes_ecb(key, bytes.fromhex("41D2FFBA3CDC15FE"))
     b'12345678'
     """
+    if len(data) < 8 or len(data) % 8 != 0:
+        raise ValueError(
+            f"Data length ({str(len(data))}) must be multiple of DES block size 8."
+        )
+
     cipher = _Cipher(
         _algorithms.TripleDES(key), _modes.ECB(), backend=_default_backend()
     )
