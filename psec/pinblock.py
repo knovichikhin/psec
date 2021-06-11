@@ -4,7 +4,6 @@ other additional information, such as the leght of the PIN.
 
 import binascii as _binascii
 import secrets as _secrets
-import string as _string
 
 from psec import tools as _tools
 
@@ -57,10 +56,10 @@ def encode_pinblock_iso_0(pin: str, pan: str) -> bytes:
     '041277CDDEEFF669'
     """
 
-    if len(pin) < 4 or len(pin) > 12 or not all(d in _string.digits for d in pin):
+    if len(pin) < 4 or len(pin) > 12 or not _tools.ascii_numeric(pin):
         raise ValueError("PIN must be between 4 and 12 digits long")
 
-    if len(pan) < 13 or not all(d in _string.digits for d in pan):
+    if len(pan) < 13 or not _tools.ascii_numeric(pan):
         raise ValueError("PAN must be at least 13 digits long")
 
     pinblock = len(pin).to_bytes(1, "big") + _binascii.a2b_hex(
@@ -102,7 +101,7 @@ def encode_pinblock_iso_2(pin: str) -> bytes:
     '241234FFFFFFFFFF'
     """
 
-    if len(pin) < 4 or len(pin) > 12 or not all(d in _string.digits for d in pin):
+    if len(pin) < 4 or len(pin) > 12 or not _tools.ascii_numeric(pin):
         raise ValueError("PIN must be between 4 and 12 digits long")
 
     return (len(pin) + 32).to_bytes(1, "big") + _binascii.a2b_hex(
@@ -149,13 +148,13 @@ def encode_pinblock_iso_3(pin: str, pan: str) -> bytes:
     '341277'
     """
 
-    if len(pin) < 4 or len(pin) > 12 or not all(d in _string.digits for d in pin):
+    if len(pin) < 4 or len(pin) > 12 or not _tools.ascii_numeric(pin):
         raise ValueError("PIN must be between 4 and 12 digits long")
 
-    if len(pan) < 13 or not all(d in _string.digits for d in pan):
+    if len(pan) < 13 or not _tools.ascii_numeric(pan):
         raise ValueError("PAN must be at least 13 digits long")
 
-    random_pad = "".join(_secrets.choice("ABCDEF") for i in range(10))
+    random_pad = "".join(_secrets.choice("ABCDEF") for _ in range(10))
 
     pinblock = (len(pin) + 48).to_bytes(1, "big") + _binascii.a2b_hex(
         pin + random_pad[: 14 - len(pin)]
@@ -209,7 +208,7 @@ def decode_pinblock_iso_0(pinblock: bytes, pan: str) -> str:
     '1234'
     """
 
-    if len(pan) < 13 or not all(d in _string.digits for d in pan):
+    if len(pan) < 13 or not _tools.ascii_numeric(pan):
         raise ValueError("PAN must be at least 13 digits long")
 
     if len(pinblock) != 8:
@@ -231,7 +230,7 @@ def decode_pinblock_iso_0(pinblock: bytes, pan: str) -> str:
 
     pin = block[2 : pin_len + 2]
 
-    if not all(d in _string.digits for d in pin):
+    if not _tools.ascii_numeric(pin):
         raise ValueError(f"PIN is not numeric: `{pin}`")
 
     return pin
@@ -289,7 +288,7 @@ def decode_pinblock_iso_2(pinblock: bytes) -> str:
 
     pin = block[2 : pin_len + 2]
 
-    if not all(d in _string.digits for d in pin):
+    if not _tools.ascii_numeric(pin):
         raise ValueError(f"PIN is not numeric: `{pin}`")
 
     return pin
@@ -339,7 +338,7 @@ def decode_pinblock_iso_3(pinblock: bytes, pan: str) -> str:
     '1234'
     """
 
-    if len(pan) < 13 or not all(d in _string.digits for d in pan):
+    if len(pan) < 13 or not _tools.ascii_numeric(pan):
         raise ValueError("PAN must be at least 13 digits long")
 
     if len(pinblock) != 8:
@@ -356,12 +355,12 @@ def decode_pinblock_iso_3(pinblock: bytes, pan: str) -> str:
     if pin_len < 4 or pin_len > 12:
         raise ValueError(f"PIN length must be between 4 and 12: `{pin_len}`")
 
-    if not all(pad in "ABCDEF" for pad in block[pin_len + 2 :]):
+    if not set(block[pin_len + 2 :]).issubset(frozenset("ABCDEF")):
         raise ValueError(f"PIN block filler is incorrect: `{block[pin_len + 2 :]}`")
 
     pin = block[2 : pin_len + 2]
 
-    if not all(d in _string.digits for d in pin):
+    if not _tools.ascii_numeric(pin):
         raise ValueError(f"PIN is not numeric: `{pin}`")
 
     return pin

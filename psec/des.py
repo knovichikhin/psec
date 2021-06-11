@@ -47,7 +47,7 @@ def apply_key_variant(key: _typing.Union[bytes, bytearray], variant: int) -> byt
     '0923456789ABCDEF'
     """
 
-    if len(key) not in (8, 16, 24):
+    if len(key) not in {8, 16, 24}:
         raise ValueError("Key must be a single, double or triple DES key")
 
     if variant < 0 or variant > 31:

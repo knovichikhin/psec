@@ -368,8 +368,8 @@ Similarly, to access optional block, access blocks dictionary inside header:
     'B0040P0TE00N0200TT0EHelloWorldPB0A000000'
 """
 
-from os import urandom as _urandom
 import typing as _typing
+from os import urandom as _urandom
 
 from psec import aes as _aes
 from psec import des as _des

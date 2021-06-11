@@ -5,7 +5,7 @@ See https://en.wikipedia.org/wiki/ISO/IEC_9797-1 for more information.
 """
 
 import enum as _enum
-from typing import Callable, Dict, Optional
+import typing as _typing
 
 from cryptography.hazmat.backends import default_backend as _default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher as _Cipher
@@ -23,7 +23,9 @@ __all__ = [
     "pad_iso_3",
 ]
 
-_pad_dispatch: Dict[int, Callable[[bytes, Optional[int]], bytes]] = {}
+_pad_dispatch: _typing.Dict[
+    int, _typing.Callable[[bytes, _typing.Optional[int]], bytes]
+] = {}
 
 
 class Algorithm(_enum.Enum):
@@ -35,8 +37,8 @@ def generate_cbc_mac(
     key: bytes,
     data: bytes,
     padding: int,
-    length: Optional[int] = None,
-    algorithm: Optional[Algorithm] = None,
+    length: _typing.Optional[int] = None,
+    algorithm: _typing.Optional[Algorithm] = None,
 ) -> bytes:
     r"""ISO/IEC 9797-1 MAC algorithm 1 aka CBC MAC.
     All data blocks are processed using TDES or AES CBC.
@@ -113,7 +115,11 @@ def generate_cbc_mac(
 
 
 def generate_retail_mac(
-    key1: bytes, key2: bytes, data: bytes, padding: int, length: Optional[int] = None
+    key1: bytes,
+    key2: bytes,
+    data: bytes,
+    padding: int,
+    length: _typing.Optional[int] = None,
 ) -> bytes:
     r"""ISO/IEC 9797-1 MAC algorithm 3 aka retail MAC.
     Requires two independent keys.
@@ -197,7 +203,7 @@ def generate_retail_mac(
     return encryptor1.update(decryptor2.update(data))[:length]
 
 
-def pad_iso_1(data: bytes, block_size: Optional[int] = None) -> bytes:
+def pad_iso_1(data: bytes, block_size: _typing.Optional[int] = None) -> bytes:
     r"""ISO/IEC 9797-1 padding method 1.
     Add the smallest number of "0x00" bytes to the right
     such that the length of resulting message is a multiple of
@@ -243,7 +249,7 @@ def pad_iso_1(data: bytes, block_size: Optional[int] = None) -> bytes:
 _pad_dispatch[1] = pad_iso_1
 
 
-def pad_iso_2(data: bytes, block_size: Optional[int] = None) -> bytes:
+def pad_iso_2(data: bytes, block_size: _typing.Optional[int] = None) -> bytes:
     r"""ISO/IEC 9797-1 padding method 2 (equivalent to ISO/IEC 7816-4).
     Add a mandatory "0x80" byte to the right of data,
     and then add the smallest number of "0x00" bytes to the right
@@ -282,7 +288,7 @@ def pad_iso_2(data: bytes, block_size: Optional[int] = None) -> bytes:
 _pad_dispatch[2] = pad_iso_2
 
 
-def pad_iso_3(data: bytes, block_size: Optional[int] = None) -> bytes:
+def pad_iso_3(data: bytes, block_size: _typing.Optional[int] = None) -> bytes:
     r"""ISO/IEC 9797-1 padding method 3.
     The padded data comprises (in this order):
         - The length of the unpadded data (in bits) expressed

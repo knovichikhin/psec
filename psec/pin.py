@@ -1,6 +1,5 @@
-import string as _string
-
 from psec import des as _des
+from psec import tools as _tools
 
 __all__ = [
     "generate_ibm3624_pin",
@@ -70,25 +69,19 @@ def generate_ibm3624_pin(
     ...     pan_pad="F")
     '4524'
     """
-    if len(pvk) not in (8, 16, 24):
+    if len(pvk) not in {8, 16, 24}:
         raise ValueError("PVK must be a DES key")
 
-    if len(conversion_table) != 16 or not all(
-        d in _string.digits for d in conversion_table
-    ):
+    if len(conversion_table) != 16 or not _tools.ascii_numeric(conversion_table):
         raise ValueError("Conversion table must 16 digits")
 
-    if (
-        len(offset) < 4
-        or len(offset) > 16
-        or not all(d in _string.digits for d in offset)
-    ):
+    if len(offset) < 4 or len(offset) > 16 or not _tools.ascii_numeric(offset):
         raise ValueError("Offset must be from 4 to 16 digits")
 
-    if len(pan) > 19 or not all(d in _string.digits for d in pan):
+    if len(pan) > 19 or not _tools.ascii_numeric(pan):
         raise ValueError("PAN must be less than 19 digits")
 
-    if len(pan_pad) != 1 or not all(d in _string.hexdigits for d in pan_pad):
+    if len(pan_pad) != 1 or not _tools.ascii_hexchar(pan_pad):
         raise ValueError("PAN pad character must be valid hex digit")
 
     validation_data = pan[pan_verify_offset : pan_verify_length + pan_verify_offset]
@@ -171,21 +164,19 @@ def generate_ibm3624_offset(
     ...     pan_pad="F")
     '0000'
     """
-    if len(pvk) not in (8, 16, 24):
+    if len(pvk) not in {8, 16, 24}:
         raise ValueError("PVK must be a DES key")
 
-    if len(conversion_table) != 16 or not all(
-        d in _string.digits for d in conversion_table
-    ):
+    if len(conversion_table) != 16 or not _tools.ascii_numeric(conversion_table):
         raise ValueError("Conversion table must 16 digits")
 
-    if len(pin) < 4 or len(pin) > 16 or not all(d in _string.digits for d in pin):
+    if len(pin) < 4 or len(pin) > 16 or not _tools.ascii_numeric(pin):
         raise ValueError("PIN must be from 4 to 16 digits")
 
-    if len(pan) > 19 or not all(d in _string.digits for d in pan):
+    if len(pan) > 19 or not _tools.ascii_numeric(pan):
         raise ValueError("PAN must be less than 19 digits")
 
-    if len(pan_pad) != 1 or not all(d in _string.hexdigits for d in pan_pad):
+    if len(pan_pad) != 1 or not _tools.ascii_hexchar(pan_pad):
         raise ValueError("PAN pad character must be valid hex digit")
 
     validation_data = pan[pan_verify_offset : pan_verify_length + pan_verify_offset]
@@ -253,16 +244,16 @@ def generate_visa_pvv(
     '4021'
     """
 
-    if len(pvk) not in (8, 16, 24):
+    if len(pvk) not in {8, 16, 24}:
         raise ValueError("PVK must be a DES key")
 
-    if len(pvki) != 1 or pvki not in _string.digits:
+    if len(pvki) != 1 or not _tools.ascii_numeric(pvki):
         raise ValueError('PVKI must be 1 digit from "0" to "9"')
 
-    if len(pin) != 4 or not all(d in _string.digits for d in pin):
+    if len(pin) != 4 or not _tools.ascii_numeric(pin):
         raise ValueError("PIN must be 4 digits")
 
-    if len(pan) < 12 or not all(d in _string.digits for d in pan):
+    if len(pan) < 12 or not _tools.ascii_numeric(pan):
         raise ValueError("PAN must be more than 12 digits")
 
     # Form a "Transformed Security Parameter"
@@ -270,13 +261,17 @@ def generate_visa_pvv(
     tsp = _des.encrypt_tdes_ecb(pvk, bytes.fromhex(tsp)).hex()
 
     # 4 digits from TSP form a PVV
-    pvv = "".join(filter(str.isdigit, tsp))[:4]
+    pvv = "".join(
+        [c for c in tsp if c in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"}][:4]
+    )
 
     # If there are not enough digits, substitute letters in TSP with digits:
     # Input  a b c d e f
     # Output 0 1 2 3 4 5
     if len(pvv) < 4:
-        pvv2 = "".join(filter((lambda x: x in ("abcdef")), tsp))[: 4 - len(pvv)]
+        pvv2 = "".join(
+            [c for c in tsp if c in {"a", "b", "c", "d", "e", "f"}][: 4 - len(pvv)]
+        )
         pvv2 = pvv2.translate({97: 48, 98: 49, 99: 50, 100: 51, 101: 52, 102: 53})
         pvv = pvv + pvv2
 
