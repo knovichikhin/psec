@@ -1,35 +1,31 @@
 |pypi| |coverage|
 
-``psec`` provides tools for protecting sensitive data and
+``psec`` package provides tools for protecting sensitive data and
 cardholder authentication in retail payment transactions.
 
-Install:
+Installation
+------------
+
+``psec`` is published on `PyPI`__ and can be installed from there:
 
 .. code-block::
 
     pip install psec
 
-``psec`` consists of the following modules:
+__ https://pypi.org/project/psec/
+
+Modules
+-------
 
 - tr31 - TR-31 key block wrapping and unwrapping
 - cvv - Card Verification Value generation
-- des - Triple DES utilities
+- des - Triple DES utilities (a wrapper over cryptography_)
+- aes - AES utilities (a wrapper over cryptography_)
 - mac - Message Authentication Code generation
 - pin - Personal Identification Number generation
 - pinblock - PIN Blocks encoding and decoding
-- tools - Miscellaneous support tools
 
-For example:
-
-.. code-block:: python
-
-    >>> import psec
-    >>> psec.pin.generate_visa_pvv(
-    ...     pvk = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210"),
-    ...     pvki="1",
-    ...     pin="1234",
-    ...     pan="4321000000001234")
-    '6629'
+.. _cryptography:  https://pypi.org/project/cryptography/
 
 .. |pypi| image:: https://img.shields.io/pypi/v/psec.svg
     :alt: PyPI
