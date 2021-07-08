@@ -1203,17 +1203,17 @@ class KeyBlock:
         # Validate MAC
         mac = self._b_generate_mac(kbak, header, clear_key_data)
         if mac != received_mac:
-            raise KeyBlockError(f"Key block MAC doesn't match generated MAC.")
+            raise KeyBlockError("Key block MAC doesn't match generated MAC.")
 
         # Extract key from key data: 2 byte key length measured in bits + key + pad
         key_length = int.from_bytes(clear_key_data[0:2], "big")
         if key_length not in {64, 128, 192}:
-            raise KeyBlockError(f"Decrypted key is invalid.")
+            raise KeyBlockError("Decrypted key is invalid.")
 
         key_length = key_length // 8
         key = clear_key_data[2 : key_length + 2]
         if len(key) != key_length:
-            raise KeyBlockError(f"Decrypted key is malformed.")
+            raise KeyBlockError("Decrypted key is malformed.")
 
         return key
 
@@ -1361,7 +1361,7 @@ class KeyBlock:
         # Validate MAC
         mac = self._c_generate_mac(kbak, header, key_data)
         if mac != received_mac:
-            raise KeyBlockError(f"Key block MAC doesn't match generated MAC.")
+            raise KeyBlockError("Key block MAC doesn't match generated MAC.")
 
         # Decrypt key data
         clear_key_data = _des.decrypt_tdes_cbc(
@@ -1371,12 +1371,12 @@ class KeyBlock:
         # Extract key from key data: 2 byte key length measured in bits + key + pad
         key_length = int.from_bytes(clear_key_data[0:2], "big")
         if key_length not in {64, 128, 192}:
-            raise KeyBlockError(f"Decrypted key is invalid.")
+            raise KeyBlockError("Decrypted key is invalid.")
 
         key_length = key_length // 8
         key = clear_key_data[2 : key_length + 2]
         if len(key) != key_length:
-            raise KeyBlockError(f"Decrypted key is malformed.")
+            raise KeyBlockError("Decrypted key is malformed.")
 
         return key
 
@@ -1451,17 +1451,17 @@ class KeyBlock:
         # Validate MAC
         mac = self._d_generate_mac(kbak, header, clear_key_data)
         if mac != received_mac:
-            raise KeyBlockError(f"Key block MAC doesn't match generated MAC.")
+            raise KeyBlockError("Key block MAC doesn't match generated MAC.")
 
         # Extract key from key data: 2 byte key length measured in bits + key + pad
         key_length = int.from_bytes(clear_key_data[0:2], "big")
         if key_length not in {128, 192, 256}:
-            raise KeyBlockError(f"Decrypted key is invalid.")
+            raise KeyBlockError("Decrypted key is invalid.")
 
         key_length = key_length // 8
         key = clear_key_data[2 : key_length + 2]
         if len(key) != key_length:
-            raise KeyBlockError(f"Decrypted key is malformed.")
+            raise KeyBlockError("Decrypted key is malformed.")
 
         return key
 
