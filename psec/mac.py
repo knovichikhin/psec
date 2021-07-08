@@ -291,6 +291,7 @@ _pad_dispatch[2] = pad_iso_2
 def pad_iso_3(data: bytes, block_size: _typing.Optional[int] = None) -> bytes:
     r"""ISO/IEC 9797-1 padding method 3.
     The padded data comprises (in this order):
+
         - The length of the unpadded data (in bits) expressed
           in big-endian binary in `block_size` bits (i.e. one `block_size`)
         - The unpadded data
