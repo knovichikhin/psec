@@ -1,3 +1,4 @@
+from os import urandom
 import pytest
 from psec import tr31
 
@@ -375,25 +376,6 @@ def test_header_attributes_exceptions(
     assert e.value.args[0] == error
 
 
-# fmt: off
-@pytest.mark.parametrize(
-    ["version_id", "key_len", "error"],
-    [
-        ("A", 7, "Key length (7) must be 8, 16, 24 for key block version A."),
-        ("B", 7, "Key length (7) must be 8, 16, 24 for key block version B."),
-        ("C", 7, "Key length (7) must be 8, 16, 24 for key block version C."),
-        ("D", 7, "Key length (7) must be 16, 24, 32 for key block version D."),
-    ],
-)
-# fmt: on
-def test_header_dump_exceptions(version_id: str, key_len: int, error: str) -> None:
-    """Make sure header dump method handle input validation"""
-    h = tr31.Header(version_id)
-    with pytest.raises(tr31.HeaderError) as e:
-        h.dump(key_len)
-    assert e.value.args[0] == error
-
-
 def test_header_dump_exception_kb_too_large() -> None:
     """Make sure header dump method handle input validation: header size too large"""
     h = tr31.Header()
@@ -405,35 +387,23 @@ def test_header_dump_exception_kb_too_large() -> None:
 
 # fmt: off
 @pytest.mark.parametrize(
-    ["version_id", "kbpk", "key"],
+    ["version_id", "kbpk"],
     [
-        ("A", b"A"*8+b"B"*8+b"C"*8, b"1"*8+b"2"*8+b"3"*8),
-        ("A", b"A"*8+b"B"*8+b"C"*8, b"1"*8+b"2"*8),
-        ("A", b"A"*8+b"B"*8+b"C"*8, b"1"*8),
-        ("A", b"A"*8+b"B"*8,        b"1"*8+b"2"*8),
-        ("A", b"A"*8+b"B"*8,        b"1"*8),
-        ("A", b"A"*8,               b"1"*8),
-        ("B", b"A"*8+b"B"*8+b"C"*8, b"1"*8+b"2"*8+b"3"*8),
-        ("B", b"A"*8+b"B"*8+b"C"*8, b"1"*8+b"2"*8),
-        ("B", b"A"*8+b"B"*8+b"C"*8, b"1"*8),
-        ("B", b"A"*8+b"B"*8,        b"1"*8+b"2"*8),
-        ("B", b"A"*8+b"B"*8,        b"1"*8),
-        ("C", b"A"*8+b"B"*8+b"C"*8, b"1"*8+b"2"*8+b"3"*8),
-        ("C", b"A"*8+b"B"*8+b"C"*8, b"1"*8+b"2"*8),
-        ("C", b"A"*8+b"B"*8+b"C"*8, b"1"*8),
-        ("C", b"A"*8+b"B"*8,        b"1"*8+b"2"*8),
-        ("C", b"A"*8+b"B"*8,        b"1"*8),
-        ("C", b"A"*8,               b"1"*8),
-        ("D", b"A"*16+b"B"*8+b"C"*8, b"1"*16+b"2"*8+b"3"*8),
-        ("D", b"A"*16+b"B"*8+b"C"*8, b"1"*16+b"2"*8),
-        ("D", b"A"*16+b"B"*8+b"C"*8, b"1"*16),
-        ("D", b"A"*16+b"B"*8,        b"1"*16+b"2"*8),
-        ("D", b"A"*16+b"B"*8,        b"1"*16),
-        ("D", b"A"*16,               b"1"*16),
+        ("A", b"A"*8+b"B"*8+b"C"*8),
+        ("A", b"A"*8+b"B"*8),
+        ("A", b"A"*8),
+        ("B", b"A"*8+b"B"*8+b"C"*8),
+        ("B", b"A"*8+b"B"*8),
+        ("C", b"A"*8+b"B"*8+b"C"*8),
+        ("C", b"A"*8+b"B"*8),
+        ("C", b"A"*8),
+        ("D", b"A"*16+b"B"*8+b"C"*8),
+        ("D", b"A"*16+b"B"*8),
+        ("D", b"A"*16),
     ],
 )
 # fmt: on
-def test_kb_sanity(version_id: str, kbpk: bytes, key: bytes) -> None:
+def test_kb_sanity(version_id: str, kbpk: bytes) -> None:
     """Make sure that wrapping and then unwrapping produces original key"""
 
     def sanity_check(kbpk: bytes, key: bytes, header: tr31.Header) -> None:
@@ -444,7 +414,10 @@ def test_kb_sanity(version_id: str, kbpk: bytes, key: bytes) -> None:
         assert key == tr31.KeyBlock(kbpk).unwrap(raw_kb)
 
     header = tr31.Header(version_id, "P0", "T", "E", "00", "N")
-    sanity_check(kbpk, key, header)
+
+    # It does not matter what the key is. Or even if it's a valid key for the algorithm.
+    for key_len in [0, 1, 8, 16, 24, 32, 99, 999]:
+        sanity_check(kbpk, urandom(key_len), header)
 
 
 # fmt: off
@@ -481,65 +454,81 @@ def test_kb_known_values(kbpk: str, key: str, kb: str) -> None:
 
 # fmt: off
 @pytest.mark.parametrize(
-    ["version_id", "kbpk_len", "key_len", "masked_key_len", "kb_len"],
+    ["version_id", "algorithm", "key_len", "masked_key_len", "kb_len"],
     [
-        ("A", 24, 24, 24,   88),
-        ("A", 24, 16, 24,   88),
-        ("A", 24,  8, 24,   88),
-        ("A", 24, 24, None, 88),
-        ("A", 24, 16, None, 88),
-        ("A", 24,  8, None, 88),
-        ("A", 24, 16, 16,   72),
-        ("A", 24, 16,  8,   72),
-        ("A", 24, 16,  0,   72),
-        ("A", 24, 16, -8,   72),
-        ("A", 24,  8,  8,   56),
-        ("B", 24, 24, 24,   96),
-        ("B", 24, 16, 24,   96),
-        ("B", 24,  8, 24,   96),
-        ("B", 24, 24, None, 96),
-        ("B", 24, 16, None, 96),
-        ("B", 24,  8, None, 96),
-        ("B", 24, 16, 16,   80),
-        ("B", 24, 16,  8,   80),
-        ("B", 24, 16,  0,   80),
-        ("B", 24, 16, -8,   80),
-        ("B", 24,  8,  8,   64),
-        ("C", 24, 24, 24,   88),
-        ("C", 24, 16, 24,   88),
-        ("C", 24,  8, 24,   88),
-        ("C", 24, 24, None, 88),
-        ("C", 24, 16, None, 88),
-        ("C", 24,  8, None, 88),
-        ("C", 24, 16, 16,   72),
-        ("C", 24, 16,  8,   72),
-        ("C", 24, 16,  0,   72),
-        ("C", 24, 16, -8,   72),
-        ("C", 24,  8,  8,   56),
-        ("D", 32, 32, 32,   144),
-        ("D", 32, 24, 32,   144),
-        ("D", 32, 16, 32,   144),
-        ("D", 32, 32, None, 144),
-        ("D", 32, 24, None, 144),
-        ("D", 32, 16, None, 144),
-        ("D", 32, 24, 24,   112),
-        ("D", 32, 24, 16,   112),
-        ("D", 32, 24,  8,   112),
-        ("D", 32, 24,  0,   112),
-        ("D", 32, 24, -1,   112),
-        ("D", 32, 16, 16,   112),
-        ("D", 32, 16,  8,   112),
-        ("D", 32, 16,  0,   112),
-        ("D", 32, 16, -1,   112),
+        ("A", "D", 24, 24,   88),
+        ("A", "D", 16, 24,   88),
+        ("A", "D",  8, 24,   88),
+        ("A", "D", 24, None, 88),
+        ("A", "D", 16, None, 88),
+        ("A", "D",  8, None, 88),
+        ("A", "D", 16, 16,   72),
+        ("A", "D", 16,  8,   72),
+        ("A", "D", 16,  0,   72),
+        ("A", "D", 16, -8,   72),
+        ("A", "D",  8,  8,   56),
+        ("A", "D",  8,  0,   56),
+        ("B", "T", 24, 24,   96),
+        ("B", "T", 16, 24,   96),
+        ("B", "T",  8, 24,   96),
+        ("B", "T", 24, None, 96),
+        ("B", "T", 16, None, 96),
+        ("B", "T",  8, None, 96),
+        ("B", "T", 16, 16,   80),
+        ("B", "T", 16,  8,   80),
+        ("B", "T", 16,  0,   80),
+        ("B", "T", 16, -8,   80),
+        ("B", "T",  8,  8,   64),
+        ("B", "T",  8,  0,   64),
+        ("C", "T", 24, 24,   88),
+        ("C", "T", 16, 24,   88),
+        ("C", "T",  8, 24,   88),
+        ("C", "T", 24, None, 88),
+        ("C", "T", 16, None, 88),
+        ("C", "T",  8, None, 88),
+        ("C", "T", 16, 16,   72),
+        ("C", "T", 16,  8,   72),
+        ("C", "T", 16,  0,   72),
+        ("C", "T", 16, -8,   72),
+        ("C", "T",  8,  8,   56),
+        ("C", "T",  8,  0,   56),
+        ("D", "A", 32, 32,   144),
+        ("D", "A", 24, 32,   144),
+        ("D", "A", 16, 32,   144),
+        ("D", "A", 32, None, 144),
+        ("D", "A", 24, None, 144),
+        ("D", "A", 16, None, 144),
+        ("D", "A", 24, 24,   112),
+        ("D", "A", 24, 16,   112),
+        ("D", "A", 24,  8,   112),
+        ("D", "A", 24,  0,   112),
+        ("D", "A", 24, -1,   112),
+        ("D", "A", 16, 16,   112),
+        ("D", "A", 16,  8,   112),
+        ("D", "A", 16,  0,   112),
+        ("D", "A", 16, -1,   112),
+        ("D", "T", 24, 24,   112),
+        ("D", "T", 16, 24,   112),
+        ("D", "T",  8, 24,   112),
+        ("D", "T", 24, None, 112),
+        ("D", "T", 16, None, 112),
+        ("D", "T",  8, None, 112),
+        ("D", "T", 16, 16,   112),
+        ("D", "T", 16,  8,   112),
+        ("D", "T", 16,  0,   112),
+        ("D", "T", 16, -8,   112),
+        ("D", "T",  8,  8,   80),
+        ("D", "T",  8,  0,   80),
     ],
 )
 # fmt: on
 def test_kb_masking_key_length(
-    version_id: str, kbpk_len: int, key_len: int, masked_key_len: int, kb_len: int
+    version_id: str, algorithm: str, key_len: int, masked_key_len: int, kb_len: int
 ) -> None:
     """Test KB key masking"""
-    kb = tr31.KeyBlock(b"E" * kbpk_len)
+    kb = tr31.KeyBlock(b"E" * 24)
     kb.header.version_id = version_id
+    kb.header.algorithm = algorithm
     kb_s = kb.wrap(b"F" * key_len, masked_key_len)
     assert len(kb_s) == kb_len
     assert kb_s[1:5] == str(kb_len).zfill(4)
@@ -558,20 +547,10 @@ def test_kb_wrap_unsupported_kb_version() -> None:
 @pytest.mark.parametrize(
     ["version_id", "kbpk_len", "key_len", "error"],
     [
-        ("A",  7, 24, "KBPK length (7) must be 1-key, 2-key or 3-key TDES."),
-        ("B",  7, 24, "KBPK length (7) must be 2-key or 3-key TDES."),
-        ("C",  7, 24, "KBPK length (7) must be 1-key, 2-key or 3-key TDES."),
-        ("D", 17, 24, "KBPK length (17) must be AES-128, AES-192 or AES-256."),
-
-        ("A", 16, 15, "Key length (15) must be 1-key, 2-key or 3-key TDES."),
-        ("B", 16, 15, "Key length (15) must be 1-key, 2-key or 3-key TDES."),
-        ("C", 16, 15, "Key length (15) must be 1-key, 2-key or 3-key TDES."),
-        ("D", 16, 15, "Key length (15) must be AES-128, AES-192 or AES-256."),
-
-        ("A", 16, 24, "Key length (24) must be less than or equal to KBPK (16)."),
-        ("B", 16, 24, "Key length (24) must be less than or equal to KBPK (16)."),
-        ("C", 16, 24, "Key length (24) must be less than or equal to KBPK (16)."),
-        ("D", 16, 24, "Key length (24) must be less than or equal to KBPK (16)."),
+        ("A",  7, 24, "KBPK length (7) must be Single, Double or Triple DES for key block version A."),
+        ("B",  7, 24, "KBPK length (7) must be Double or Triple DES for key block version B."),
+        ("C",  7, 24, "KBPK length (7) must be Single, Double or Triple DES for key block version C."),
+        ("D", 17, 24, "KBPK length (17) must be AES-128, AES-192 or AES-256 for key block version D."),
     ],
 )
 # fmt: on
@@ -619,18 +598,21 @@ def test_kb_init_with_raw_header_blocks() -> None:
     [
         (16, "B0040P0TE00N0000", "Key block header length (40) doesn't match input data length (16)."),
         (16, "BX040P0TE00N0000", "Key block header length (X040) is malformed. Expecting 4 digits."),
-        (16, "A0087M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA", "Key block length (87) must be multiple of 8."),
-        (16, "D0087M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA", "Key block length (87) must be multiple of 16."),
+
+        (16, "A0087M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA", "Key block length (87) must be multiple of 8 for key block version A."),
+        (16, "B0087M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA", "Key block length (87) must be multiple of 8 for key block version B."),
+        (16, "C0087M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA", "Key block length (87) must be multiple of 8 for key block version C."),
+        (16, "D0087M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA", "Key block length (87) must be multiple of 16 for key block version D."),
 
         (16, "A0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBAX", "Key block MAC must be valid hexchars. MAC: '9AA5BBAX'"),
         (16, "B0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBAX", "Key block MAC must be valid hexchars. MAC: '468910379AA5BBAX'"),
         (16, "C0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBAX", "Key block MAC must be valid hexchars. MAC: '9AA5BBAX'"),
         (16, "D0112P0AE00E0000DDF7B73888F22B757600010215895621B94A4E8DA57DD3E01BB66FF046A4E6B89B8F5C30BDD3A946205FDF791C3548EX", "Key block MAC must be valid hexchars. MAC: '9B8F5C30BDD3A946205FDF791C3548EX'"),
 
-        (16, "A0024M3TC00E0100TT04BBA6", "Key block MAC is malformed. Received 4/8. MAC: 'BBA6'"),
-        (16, "B0024M3TC00E00009AA5BBA6", "Key block MAC is malformed. Received 8/16. MAC: '9AA5BBA6'"),
-        (16, "C0024M3TC00E0100TT04BBA6", "Key block MAC is malformed. Received 4/8. MAC: 'BBA6'"),
-        (16, "D0032P0AE00E0000205FDF791C3548EC", "Key block MAC is malformed. Received 16/32. MAC: '205FDF791C3548EC'"),
+        (16, "A0024M3TC00E0100TT04BBA6", "Key block MAC is malformed. Received 4 bytes MAC. Expecting 8 bytes for key block version A. MAC: 'BBA6'"),
+        (16, "B0024M3TC00E00009AA5BBA6", "Key block MAC is malformed. Received 8 bytes MAC. Expecting 16 bytes for key block version B. MAC: '9AA5BBA6'"),
+        (16, "C0024M3TC00E0100TT04BBA6", "Key block MAC is malformed. Received 4 bytes MAC. Expecting 8 bytes for key block version C. MAC: 'BBA6'"),
+        (16, "D0032P0AE00E0000205FDF791C3548EC", "Key block MAC is malformed. Received 16 bytes MAC. Expecting 32 bytes for key block version D. MAC: '205FDF791C3548EC'"),
 
         (16, "A0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF3544689103X9AA5BBA6", "Encrypted key must be valid hexchars. Key data: '62C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF3544689103X'"),
         (16, "B0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF35X468910379AA5BBA6", "Encrypted key must be valid hexchars. Key data: '62C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF35X'"),
@@ -647,16 +629,17 @@ def test_kb_init_with_raw_header_blocks() -> None:
         (16, "C0056M3TC00E0000BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB9AA5BBA6", "Key block MAC doesn't match generated MAC."),
         (16, "D0112P0AE00E0000DDF7B73888F22B757600010215895621B94A4E8DA57DD3E01BB66FF046A4E6B89B8F5C30BDD3A946205FDF791C3548E4", "Key block MAC doesn't match generated MAC."),
 
-        (7,  "A0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA6", "KBPK length (7) must be 1-key, 2-key or 3-key TDES."),
-        (8,  "B0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA6", "KBPK length (8) must be 2-key or 3-key TDES."),
-        (7,  "C0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA6", "KBPK length (7) must be 1-key, 2-key or 3-key TDES."),
-        (19, "D0112P0AE00E0000DDF7B73888F22B757600010215895621B94A4E8DA57DD3E01BB66FF046A4E6B89B8F5C30BDD3A946205FDF791C3548E4", "KBPK length (19) must be AES-128, AES-192 or AES-256."),
+        (7,  "A0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA6", "KBPK length (7) must be Single, Double or Triple DES for key block version A."),
+        (8,  "B0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA6", "KBPK length (8) must be Double or Triple DES for key block version B."),
+        (7,  "C0088M3TC00E000062C2C14D8785A01A9E8283525CA96F490D0CC6346FC7C2AC1E6FF354468910379AA5BBA6", "KBPK length (7) must be Single, Double or Triple DES for key block version C."),
+        (19, "D0112P0AE00E0000DDF7B73888F22B757600010215895621B94A4E8DA57DD3E01BB66FF046A4E6B89B8F5C30BDD3A946205FDF791C3548E4", "KBPK length (19) must be AES-128, AES-192 or AES-256 for key block version D."),
 
-        # These keys have length set to 0 bits. KBPK must be b"E"*16.
-        (16, "A0056M3TC00E0000ABE3EB7813FD4031BCBAEC1FCAB750BB920E4863", "Decrypted key is invalid."),
-        (16, "B0064M3TC00E000013F1B06566ECAE897A6DF8C7AA651FCEF9480447EEEC9933", "Decrypted key is invalid."),
-        (16, "C0056M3TC00E0000629D73329F5F42D868B2EB1E4C52D1E191BC1D3C", "Decrypted key is invalid."),
-        (16, "D0144P0AE00E0000B85C51F0152C2B2E89A2E7B30F71063F5F654F02D70001252B45CB9CA39B813E5297828F95A1242150DDCB0E8ECFBDC72B0B913476AC2CFF928D5807DD3A94E9", "Decrypted key is invalid."),
+        # These keys have length set to 3 bits And key lengths that do not add up to a byte are not supported.
+        # KBPK must be b"E"*16.
+        (16, "A0056M3TC00E0000C6F4C83842160CBA48D98A1218862857124FAF46", "Decrypted key is invalid."),
+        (16, "B0064M3TC00E0000F74E0A3502C5CEE07342D5DE9E72135E4A81944F80691F0F", "Decrypted key is invalid."),
+        (16, "C0056M3TC00E0000F71573EB7441BB50A5C4511893AFB37B5B95A4AD", "Decrypted key is invalid."),
+        (16, "D0080M3TC00E000007E81A7F29A870D4A0CD5AB27E9FEC4A8863E879B11EA3A0ADA406AD26D35B2F", "Decrypted key is invalid."),
 
         # DES key length is set to 128 bits while the key is 64 bits. KBPK must be b"E"*16.
         # AES key length is set to 256 bits while the key is 128 bits. KBPK must be b"E"*16.

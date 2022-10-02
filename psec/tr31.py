@@ -73,7 +73,7 @@ block and is not substituted. And upon successful validation/unwrapping it
 provides parsed key block header properties.
 
 These properties, such as key usage, algorithm, mode of use and so on, can then
-be ignored or enforced as a separate step.
+be ignored or enforced as a separate step by the library user.
 
 The following sections go into details on what key usage, algorithm and so on
 are formally allowed by the specification.
@@ -621,8 +621,8 @@ class Header:
     ----------
     version_id : str
         Identifies the version of the key block, which defines the method
-        by which it is cryptographically protected and the content and
-        layout of the block:
+        by which it is cryptographically protected as well as the content and
+        layout of the key block:
 
             - A - TDES variant. Deprecated and should not be used for new applications.
             - B - TDES key derivation. Preferred TDES implementation.
@@ -650,8 +650,8 @@ class Header:
     ----------
     version_id : str
         Identifies the version of the key block, which defines the method
-        by which it is cryptographically protected and the content and
-        layout of the block:
+        by which it is cryptographically protected as well as the content and
+        layout of the key block:
 
             - A = TDES variant. Deprecated and should not be used for new applications.
             - B = TDES key derivation. Preferred TDES implementation.
@@ -679,14 +679,11 @@ class Header:
         information about the key block.
     """
 
-    _algo_mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
-    _algo_block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
-    _algo_key_sizes = {
-        "A": frozenset([8, 16, 24]),
-        "B": frozenset([8, 16, 24]),
-        "C": frozenset([8, 16, 24]),
-        "D": frozenset([16, 24, 32]),
-    }
+    _version_id_key_block_mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
+
+    # DES = 8 bytes block
+    # AES = 16 bytes block
+    _version_id_algo_block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
 
     def __init__(
         self,
@@ -707,7 +704,9 @@ class Header:
         self.blocks = Blocks()
 
     def __str__(self) -> str:
-        blocks_num, blocks = self.blocks.dump(self._algo_block_size[self.version_id])
+        blocks_num, blocks = self.blocks.dump(
+            self._version_id_algo_block_size[self.version_id]
+        )
         return (
             self.version_id
             + str(16 + len(blocks)).zfill(4)
@@ -724,7 +723,7 @@ class Header:
     @property
     def version_id(self) -> str:
         """Identifies the version of the key block, which defines the method
-        by which it is cryptographically protected and the content and
+        by which it is cryptographically protected as well as the content and
         layout of the block.
         """
         return self._version_id
@@ -826,13 +825,7 @@ class Header:
         HeaderError
         """
 
-        if key_len not in self._algo_key_sizes[self.version_id]:
-            valid_sizes = ", ".join(map(str, self._algo_key_sizes[self.version_id]))
-            raise HeaderError(
-                f"Key length ({str(key_len)}) must be {valid_sizes} for key block version {self.version_id}."
-            )
-
-        algo_block_size = self._algo_block_size[self.version_id]
+        algo_block_size = self._version_id_algo_block_size[self.version_id]
         pad_len = algo_block_size - ((2 + key_len) % algo_block_size)
 
         blocks_num, blocks = self.blocks.dump(algo_block_size)
@@ -842,7 +835,7 @@ class Header:
             + 4  # key length's length in ASCII
             + (key_len * 2)
             + (pad_len * 2)
-            + (self._algo_mac_len[self.version_id] * 2)
+            + (self._version_id_key_block_mac_len[self.version_id] * 2)
             + len(blocks)
         )
 
@@ -926,10 +919,9 @@ class KeyBlock:
     ----------
     kbpk : bytes
         Key Block Protection Key.
-        The length of the KBPK must equal or greater than the key to be protected.
-        Must be 8, 16 or 24 DES key for versions A and C.
-        Must be 16 or 24 DES key for versions B.
-        Must be 16, 24 or 32 AES key for version D.
+        Must be a Single, Double or Triple DES key for versions A and C.
+        Must be a Double or Triple DES key for versions B.
+        Must be an AES key for version D.
     header : Header or str
         TR-31 key block header either in TR-31 string format or
         as a Header class. Optional.
@@ -940,17 +932,28 @@ class KeyBlock:
     ----------
     kbpk : bytes
         Key Block Protection Key.
-        The length of the KBPK must equal or greater than the key to be protected.
-        Must be 8, 16 or 24 DES key for versions A and C.
-        Must be 16 or 24 DES key for version B.
-        Must be 16, 24 or 32 AES key for version D.
+        Must be a Single, Double or Triple DES key for versions A and C.
+        Must be a Double or Triple DES key for versions B.
+        Must be an AES key for version D.
     header : Header
         TR-31 key block header.
+
+    Notes
+    -----
+    It's highly recommended that the length of the KBPK is equal or greater
+    than the length of the key to be protected. E.g. do not protect AES-256 key
+    with AES-128 KBPK.
     """
 
-    _algo_mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
-    _algo_block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
-    _algo_max_key_len = {"A": 24, "B": 24, "C": 24, "D": 32}
+    _version_id_key_block_mac_len = {"A": 4, "B": 8, "C": 4, "D": 16}
+
+    # DES = 8 bytes block
+    # AES = 16 bytes block
+    _version_id_algo_block_size = {"A": 8, "B": 8, "C": 8, "D": 16}
+
+    # DES = 24 bytes (Triple DES)
+    # AES = 32 byets (AES-256)
+    _algo_id_max_key_len = {"T": 24, "D": 24, "A": 32}
 
     def __init__(
         self, kbpk: bytes, header: _typing.Optional[_typing.Union[Header, str]] = None
@@ -969,19 +972,18 @@ class KeyBlock:
         return str(self.header)
 
     def wrap(self, key: bytes, masked_key_len: _typing.Optional[int] = None) -> str:
-        r"""Wrap key into a TR-31 key block version A, B or C.
+        r"""Wrap key into a TR-31 key block version A, B, C or D.
 
         Parameters
         ----------
         key : bytes
             A key to be wrapped.
-            Must be a valid DES key for versions A, B and C.
-            Must be a valid AES key for version D.
         masked_key_len : int, optional
             Desired key length in bytes to mask true key length.
-            Must be 8, 16 or 24 for versions A, B and C (DES).
-            Must be 16, 24 or 32 for version D (AES).
-            Defaults to max key size.
+            Defaults to max key size for algorithm:
+
+                - Triple DES for DES algorithm (24 bytes)
+                - AES-256 for AES algorithm (32 bytes)
 
         Returns
         -------
@@ -1029,7 +1031,7 @@ class KeyBlock:
 
         if masked_key_len is None:
             masked_key_len = max(
-                self._algo_max_key_len[self.header.version_id], len(key)
+                self._algo_id_max_key_len.get(self.header.algorithm, len(key)), len(key)
             )
         else:
             masked_key_len = max(masked_key_len, len(key))
@@ -1042,7 +1044,7 @@ class KeyBlock:
         )
 
     def unwrap(self, key_block: str) -> bytes:
-        r"""Unwrap key from a TR-31 key block version A, B or C.
+        r"""Unwrap key from a TR-31 key block version A, B, C or D.
 
         Parameters
         ----------
@@ -1052,9 +1054,9 @@ class KeyBlock:
         Returns
         -------
         key : bytes
-            Unwrapped key.
-            A DES key for versions A, B and C.
-            An AES key for version D.
+            Unwrapped key. The unwrapped key is guaranteed to be what the sender
+            wrapped into the block. However, it does not guarantee that the sender
+            wrapped a valid key.
 
         Raises
         ------
@@ -1103,15 +1105,19 @@ class KeyBlock:
                 f"doesn't match input data length ({str(len(key_block))})."
             )
 
-        if len(key_block) % self._algo_block_size[self.header.version_id] != 0:
+        if (
+            len(key_block) % self._version_id_algo_block_size[self.header.version_id]
+            != 0
+        ):
             raise KeyBlockError(
                 f"Key block length ({str(len(key_block))}) must be multiple of "
-                f"{str(self._algo_block_size[self.header.version_id])}."
+                f"{str(self._version_id_algo_block_size[self.header.version_id])} "
+                f"for key block version {self.header.version_id}."
             )
 
         # Extract MAC from the key block.
         # MAC length is fixed for each version ID.
-        algo_mac_len = self._algo_mac_len[self.header.version_id]
+        algo_mac_len = self._version_id_key_block_mac_len[self.header.version_id]
         received_mac_s = key_block[header_len:][-algo_mac_len * 2 :]
         try:
             received_mac = bytes.fromhex(received_mac_s)
@@ -1122,8 +1128,8 @@ class KeyBlock:
 
         if len(received_mac) != algo_mac_len:
             raise KeyBlockError(
-                f"Key block MAC is malformed. "
-                f"Received {str(len(received_mac_s))}/{str(algo_mac_len * 2)}. "
+                f"Key block MAC is malformed. Received {str(len(received_mac_s))} bytes MAC. "
+                f"Expecting {str(algo_mac_len * 2)} bytes for key block version {self.header.version_id}. "
                 f"MAC: '{received_mac_s}'"
             )
 
@@ -1153,24 +1159,16 @@ class KeyBlock:
 
         if len(self.kbpk) not in {16, 24}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be 2-key or 3-key TDES."
-            )
-
-        if len(key) not in {8, 16, 24}:
-            raise KeyBlockError(
-                f"Key length ({str(len(key))}) must be 1-key, 2-key or 3-key TDES."
-            )
-
-        if len(key) > len(self.kbpk):
-            raise KeyBlockError(
-                f"Key length ({str(len(key))}) must be less than or equal to KBPK ({str(len(self.kbpk))})."
+                f"KBPK length ({str(len(self.kbpk))}) must be Double or Triple DES "
+                f"for key block version {self.header.version_id}."
             )
 
         # Derive Key Block Encryption and Authentication Keys
         kbek, kbak = self._b_derive()
 
         # Format key data: 2 byte key length measured in bits + key + pad
-        pad = _urandom(6 + extra_pad)
+        pad_len = 8 - ((2 + len(key) + extra_pad) % 8)
+        pad = _urandom(pad_len + extra_pad)
         clear_key_data = (len(key) * 8).to_bytes(2, "big") + key + pad
 
         # Generate MAC
@@ -1186,10 +1184,11 @@ class KeyBlock:
 
         if len(self.kbpk) not in {16, 24}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be 2-key or 3-key TDES."
+                f"KBPK length ({str(len(self.kbpk))}) must be Double or Triple DES "
+                f"for key block version {self.header.version_id}."
             )
 
-        if len(key_data) < 16 or len(key_data) % 8 != 0:
+        if len(key_data) < 8 or len(key_data) % 8 != 0:
             raise KeyBlockError(
                 f"Encrypted key is malformed. Key data: '{key_data.hex().upper()}'"
             )
@@ -1207,7 +1206,9 @@ class KeyBlock:
 
         # Extract key from key data: 2 byte key length measured in bits + key + pad
         key_length = int.from_bytes(clear_key_data[0:2], "big")
-        if key_length not in {64, 128, 192}:
+
+        # This library does not support keys not measured in whole bytes
+        if key_length % 8 != 0:
             raise KeyBlockError("Decrypted key is invalid.")
 
         key_length = key_length // 8
@@ -1312,24 +1313,16 @@ class KeyBlock:
 
         if len(self.kbpk) not in {8, 16, 24}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be 1-key, 2-key or 3-key TDES."
-            )
-
-        if len(key) not in {8, 16, 24}:
-            raise KeyBlockError(
-                f"Key length ({str(len(key))}) must be 1-key, 2-key or 3-key TDES."
-            )
-
-        if len(key) > len(self.kbpk):
-            raise KeyBlockError(
-                f"Key length ({str(len(key))}) must be less than or equal to KBPK ({str(len(self.kbpk))})."
+                f"KBPK length ({str(len(self.kbpk))}) must be Single, Double or Triple DES "
+                f"for key block version {self.header.version_id}."
             )
 
         # Derive Key Block Encryption and Authentication Keys
         kbek, kbak = self._c_derive()
 
         # Format key data: 2 byte key length measured in bits + key + pad
-        pad = _urandom(6 + extra_pad)
+        pad_len = 8 - ((2 + len(key) + extra_pad) % 8)
+        pad = _urandom(pad_len + extra_pad)
         clear_key_data = (len(key) * 8).to_bytes(2, "big") + key + pad
 
         # Encrypt key data
@@ -1347,10 +1340,11 @@ class KeyBlock:
 
         if len(self.kbpk) not in {8, 16, 24}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be 1-key, 2-key or 3-key TDES."
+                f"KBPK length ({str(len(self.kbpk))}) must be Single, Double or Triple DES "
+                f"for key block version {self.header.version_id}."
             )
 
-        if len(key_data) < 16 or len(key_data) % 8 != 0:
+        if len(key_data) < 8 or len(key_data) % 8 != 0:
             raise KeyBlockError(
                 f"Encrypted key is malformed. Key data: '{key_data.hex().upper()}'"
             )
@@ -1370,7 +1364,9 @@ class KeyBlock:
 
         # Extract key from key data: 2 byte key length measured in bits + key + pad
         key_length = int.from_bytes(clear_key_data[0:2], "big")
-        if key_length not in {64, 128, 192}:
+
+        # This library does not support keys not measured in whole bytes
+        if key_length % 8 != 0:
             raise KeyBlockError("Decrypted key is invalid.")
 
         key_length = key_length // 8
@@ -1400,17 +1396,8 @@ class KeyBlock:
 
         if len(self.kbpk) not in {16, 24, 32}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be AES-128, AES-192 or AES-256."
-            )
-
-        if len(key) not in {16, 24, 32}:
-            raise KeyBlockError(
-                f"Key length ({str(len(key))}) must be AES-128, AES-192 or AES-256."
-            )
-
-        if len(key) > len(self.kbpk):
-            raise KeyBlockError(
-                f"Key length ({str(len(key))}) must be less than or equal to KBPK ({str(len(self.kbpk))})."
+                f"KBPK length ({str(len(self.kbpk))}) must be AES-128, AES-192 or AES-256 "
+                f"for key block version {self.header.version_id}."
             )
 
         # Derive Key Block Encryption and Authentication Keys
@@ -1434,10 +1421,11 @@ class KeyBlock:
 
         if len(self.kbpk) not in {16, 24, 32}:
             raise KeyBlockError(
-                f"KBPK length ({str(len(self.kbpk))}) must be AES-128, AES-192 or AES-256."
+                f"KBPK length ({str(len(self.kbpk))}) must be AES-128, AES-192 or AES-256 "
+                f"for key block version {self.header.version_id}."
             )
 
-        if len(key_data) < 32 or len(key_data) % 16 != 0:
+        if len(key_data) < 16 or len(key_data) % 16 != 0:
             raise KeyBlockError(
                 f"Encrypted key is malformed. Key data: '{key_data.hex().upper()}'"
             )
@@ -1455,7 +1443,9 @@ class KeyBlock:
 
         # Extract key from key data: 2 byte key length measured in bits + key + pad
         key_length = int.from_bytes(clear_key_data[0:2], "big")
-        if key_length not in {128, 192, 256}:
+
+        # This library does not support keys not measured in whole bytes
+        if key_length % 8 != 0:
             raise KeyBlockError("Decrypted key is invalid.")
 
         key_length = key_length // 8
@@ -1594,10 +1584,9 @@ def wrap(
     ----------
     kbpk : bytes
         Key Block Protection Key.
-        The length of the KBPK must equal or greater than the key to be protected.
-        Must be 8, 16 or 24 DES key for versions A and C.
-        Must be 16 or 24 DES key for versions B.
-        Must be 16, 24 or 32 AES key for version D.
+        Must be a Single, Double or Triple DES key for versions A and C.
+        Must be a Double or Triple DES key for versions B.
+        Must be an AES key for version D.
     header : Header or str
         TR-31 key block header either in TR-31 string format or
         as a Header class.
@@ -1605,13 +1594,12 @@ def wrap(
         to extract header from.
     key : bytes
         A key to be wrapped.
-        Must be a valid DES key for versions A, B and C.
-        Must be a valid AES key for version D.
     masked_key_len : int, optional
         Desired key length in bytes to mask true key length.
-        Must be 8, 16 or 24 for versions A, B and C (DES).
-        Must be 16, 24 or 32 for version D (AES).
-        Defaults to max key size.
+        Defaults to max key size for algorithm:
+
+            - Triple DES for DES algorithm (24 bytes)
+            - AES-256 for AES algorithm (32 bytes)
 
     Returns
     -------
@@ -1623,6 +1611,12 @@ def wrap(
     ------
     KeyBlockError
     HeaderError
+
+    Notes
+    -----
+    It's highly recommended that the length of the KBPK is equal or greater
+    than the length of the key to be protected. E.g. do not protect AES-256 key
+    with AES-128 KBPK.
 
     Examples
     --------
@@ -1643,10 +1637,9 @@ def unwrap(kbpk: bytes, key_block: str) -> _typing.Tuple[Header, bytes]:
     ----------
     kbpk : bytes
         Key Block Protection Key.
-        The length of the KBPK must equal or greater than the key to be protected.
-        Must be 8, 16 or 24 DES key for versions A and C.
-        Must be 16 or 24 DES key for versions B.
-        Must be 16, 24 or 32 AES key for version D.
+        Must be a Single, Double or Triple DES key for versions A and C.
+        Must be a Double or Triple DES key for versions B.
+        Must be an AES key for version D.
     key_block : str
         A TR-31 key block.
 
@@ -1655,14 +1648,20 @@ def unwrap(kbpk: bytes, key_block: str) -> _typing.Tuple[Header, bytes]:
     header : Header
         TR-31 key block header.
     key : bytes
-        Unwrapped key.
-        A DES key for versions A, B and C.
-        An AES key for version D.
+        Unwrapped key. The unwrapped key is guaranteed to be what the sender
+        wrapped into the block. However, it does not guarantee that the sender
+        wrapped a valid key.
 
     Raises
     ------
     KeyBlockError
     HeaderError
+
+    Notes
+    -----
+    It's highly recommended that the length of the KBPK is equal or greater
+    than the length of the key to be protected. E.g. do not protect AES-256 key
+    with AES-128 KBPK.
 
     Examples
     --------
