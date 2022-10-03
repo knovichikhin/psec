@@ -1,7 +1,5 @@
 from setuptools import find_packages, setup
 
-from psec import __version__
-
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -26,7 +24,7 @@ if __name__ == "__main__":
 
     setup(
         name="psec",
-        version=__version__,
+        version="1.2.0",
         author="Konstantin Novichikhin",
         author_email="konstantin.novichikhin@gmail.com",
         description="A Python package for cryptography in payment systems",

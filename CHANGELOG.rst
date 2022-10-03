@@ -1,3 +1,7 @@
+1.2.0 - 2022-10-02
+------------------
+- Update TR-31 to wrap/unwrap any key.
+
 1.1.0 - 2021-06-28
 ------------------
 - Added support for TR-31 key block. Specification version 2018.
