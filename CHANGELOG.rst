@@ -1,3 +1,7 @@
+1.3.0 - 2022-12-06
+------------------
+- Add PIN block ISO 4 support. Thanks David Schmid <david.schmid@mailbox.org>.
+
 1.2.0 - 2022-10-02
 ------------------
 - Update TR-31 to wrap/unwrap any key.
