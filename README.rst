@@ -25,6 +25,17 @@ Modules
 - pin - Personal Identification Number generation
 - pinblock - PIN Blocks encoding and decoding
 
+Contributors
+------------
+
+- `Konstantin Novichikhin <https://github.com/knovichikhin>`_
+
+  - Author
+
+- `David Schmid <https://github.com/5n00py>`_
+
+  - PIN block ISO 4 support
+
 .. _cryptography:  https://pypi.org/project/cryptography/
 
 .. |pypi| image:: https://img.shields.io/pypi/v/psec.svg
